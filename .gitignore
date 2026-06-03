@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Model checkpoints (uncomment after training to track)
+# checkpoints/
+
+# Data index (generated)
+data/index.pkl
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+
+# Results (generated)
+results/
+
+# Figures (generated)
+figures/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# PDF/doc output
+*.pdf
+*.doc
+*.docx
+!report/*.pdf
+!report/*.docx
