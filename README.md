@@ -1,4 +1,4 @@
-# 姜新晨I Rumor Detection — 可解释谣言检测系统
+# AI Rumor Detection — 可解释谣言检测系统
 
 **2026《人工智能导论》课程大作业**
 
@@ -648,7 +648,7 @@ llm_explainer.py         # LLM 解释生成（LLMExplainer 类 + prompt 模板�
 event_context.py         # 事件背景信息
 data/
   index.pkl              # 训练集向量索引（预计算，加速推理）
-.env.example             # 姜新晨PI key 配置模板
+.env.example             # API key 配置模板
 ```
 
 **对外接口**（供 韩宇飞 集成）:
@@ -853,7 +853,7 @@ tqdm==4.65.0
 python-dotenv==1.0.0
 ```
 
-### 姜新晨PI 配置
+### API 配置
 
 复制 `.env.example` 为 `.env`，填入 SJTU API key：
 
@@ -880,7 +880,7 @@ SJTU_API_KEY=sk-xxxxxxxxxxxxxxxx
 AI_rumor_detection/
 ├── README.md                     # 本文件
 ├── requirements.txt              # Python 依赖
-├── .env.example                  # 姜新晨PI 配置模板
+├── .env.example                  # API 配置模板
 ├── .gitignore
 │
 ├── rumer2026/                    # 原始数据
@@ -971,7 +971,7 @@ def set_seed(seed=42):
 ```python
 # 在文本前拼接事件 token
 text = f"[EVENT_{event_id}] {original_text}"
-# 靳卓达ERT 能学到 event 和谣言之间的关联
+# BERT 能学到 event 和谣言之间的关联
 ```
 
 **预期效果**: 准确率提升 2-3%

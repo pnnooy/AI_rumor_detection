@@ -237,7 +237,7 @@ python evaluate.py --input results/val_results.csv --output-dir figures/
 解决: 确认 models/classifier.py 未被修改，通知 姜新晨 重新训练
 ```
 
-### 姜新晨PI 调用返回空
+### API 调用返回空
 ```
 错误: LLM 返回空内容
 原因: 请求中缺少 user 角色的消息
