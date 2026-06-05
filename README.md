@@ -4,6 +4,26 @@
 
 ---
 
+## 目录
+
+- [项目概述](#项目概述)
+- [Git 分支管理与协作规范](#git-分支管理与协作规范)
+- [数据说明](#数据说明)
+- [系统架构](#系统架构)
+- [分工与详细工作指南](#分工与详细工作指南)
+  - [成员 A：数据预处理 + BERT 分类器](#成员-a数据预处理--bert-分类器)
+  - [成员 B：LLM 解释生成 + 相似案例检索](#成员-bllm-解释生成--相似案例检索)
+  - [成员 C：系统集成 + 评估 + 报告](#成员-c系统集成--评估--报告)
+- [环境配置](#环境配置)
+- [项目目录结构](#项目目录结构)
+- [可复现性保障](#可复现性保障)
+- [未来优化方向](#未来优化方向)
+- [开发时间线建议](#开发时间线建议)
+- [常见问题](#常见问题)
+- [参考资料](#参考资料)
+
+---
+
 ## 项目概述
 
 构建一个**可解释的谣言检测系统**：输入一条推文（tweet），系统输出（1）是否为谣言，（2）判断依据的自然语言解释。
@@ -37,6 +57,66 @@
 | 6 | 623 | 89 | ~53% | 大样本 |
 
 > ⚠️ Event 2（仅 9 条全谣言）和 Event 3（99% 谣言）是极端情况，需要特别关注。
+
+---
+
+## Git 分支管理与协作规范
+
+### 分支策略
+
+```
+main ───────────────────────────────────────────────→
+  │
+  ├── member-a/classifier ──→ PR → C review → merge
+  ├── member-b/explainer  ──→ PR → C review → merge
+  └── member-c/integration──→ PR → merge
+```
+
+### 命名规则
+
+| 分支类型 | 格式 | 示例 |
+|---------|------|------|
+| 功能分支 | `member-{a/b/c}/{模块}` | `member-a/classifier`, `member-b/retrieval` |
+| 修复分支 | `fix/{描述}` | `fix/api-timeout`, `fix/preprocess-url` |
+| 实验分支 | `exp/{描述}` | `exp/data-augmentation`, `exp/leave-one-event` |
+
+### 工作流
+
+**1. 每人从 main 拉自己的分支**
+```bash
+git checkout main && git pull origin main
+git checkout -b member-a/classifier   # A
+git checkout -b member-b/explainer    # B
+git checkout -b member-c/integration  # C
+```
+
+**2. 提交到自己的远程分支**
+```bash
+git add <files>
+git commit -m "feat: xxx"
+git push origin member-a/classifier
+```
+
+**3. 发起 Pull Request → C review → Merge**
+
+### Commit 规范
+
+```
+feat:     新功能    feat: 添加 attention 关键词提取
+fix:      修复      fix: URL 清洗正则遗漏 case
+docs:     文档      docs: 更新 API 配置说明
+refactor: 重构      refactor: 简化分类器前向传播
+test:     测试      test: 添加跨事件评估测试
+```
+
+### 注意事项
+
+- ⚠️ **永远不要在 main 分支上直接开发**
+- ⚠️ **不要 force push 到 main**
+- ⚠️ **不要提交 `.env` 和模型权重文件**（已在 `.gitignore`）
+- ⚠️ **merge 前确保代码在自己机器上跑通**
+
+> 详细协作流程、接口契约、集成 check list 见 **[DEVELOPMENT.md](DEVELOPMENT.md)**
 
 ---
 
@@ -746,66 +826,6 @@ figures/
 report/
   报告.docx 或 报告.pdf  # 最终报告
 ```
-
----
-
-## Git 分支管理与协作规范
-
-### 分支策略
-
-```
-main ───────────────────────────────────────────────→
-  │
-  ├── member-a/classifier ──→ PR → C review → merge
-  ├── member-b/explainer  ──→ PR → C review → merge
-  └── member-c/integration──→ PR → merge
-```
-
-### 命名规则
-
-| 分支类型 | 格式 | 示例 |
-|---------|------|------|
-| 功能分支 | `member-{a/b/c}/{模块}` | `member-a/classifier`, `member-b/retrieval` |
-| 修复分支 | `fix/{描述}` | `fix/api-timeout`, `fix/preprocess-url` |
-| 实验分支 | `exp/{描述}` | `exp/data-augmentation`, `exp/leave-one-event` |
-
-### 工作流
-
-**1. 每人从 main 拉自己的分支**
-```bash
-git checkout main && git pull origin main
-git checkout -b member-a/classifier   # A
-git checkout -b member-b/explainer    # B
-git checkout -b member-c/integration  # C
-```
-
-**2. 提交到自己的远程分支**
-```bash
-git add <files>
-git commit -m "feat: xxx"
-git push origin member-a/classifier
-```
-
-**3. 发起 Pull Request → C review → Merge**
-
-### Commit 规范
-
-```
-feat:     新功能    feat: 添加 attention 关键词提取
-fix:      修复      fix: URL 清洗正则遗漏 case
-docs:     文档      docs: 更新 API 配置说明
-refactor: 重构      refactor: 简化分类器前向传播
-test:     测试      test: 添加跨事件评估测试
-```
-
-### 注意事项
-
-- ⚠️ **永远不要在 main 分支上直接开发**
-- ⚠️ **不要 force push 到 main**
-- ⚠️ **不要提交 `.env` 和模型权重文件**（已在 `.gitignore`）
-- ⚠️ **merge 前确保代码在自己机器上跑通**
-
-> 详细协作流程、接口契约、集成 check list 见 **[DEVELOPMENT.md](DEVELOPMENT.md)**
 
 ---
 
