@@ -433,9 +433,16 @@ class LLMExplainer:
     def __init__(self):
         self.client = OpenAI(
             api_key=os.getenv("SJTU_API_KEY"),
-            base_url="https://api.claw.sjtu.edu.cn/api/v1"
+            base_url="https://models.sjtu.edu.cn/api/v1"
         )
         self.model = "deepseek-chat"
+```
+
+> ⚠️ **API 要求**：
+> - 仅限校园网访问（校外需通过 SJTU VPN）
+> - 请求中必须包含 `user` 角色的消息，否则不返回内容
+> - 速率限制：100 次/分钟，100000 tokens/分钟，10亿 tokens/周
+> - API key 有效期至 2026-06-30
     
     def build_prompt(self, text, dl_result, similar_cases, event_info):
         """构建包含五要素的提示词"""
@@ -497,8 +504,7 @@ class LLMExplainer:
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,      # 低温度保证解释一致性
-            max_tokens=512,
-            seed=42               # 固定种子保证可复现
+            max_tokens=512
         )
         
         return response.choices[0].message.content
@@ -761,7 +767,16 @@ python-dotenv==1.0.0
 SJTU_API_KEY=sk-xxxxxxxxxxxxxxxx
 ```
 
-**获取 API key**: https://claw.sjtu.edu.cn/guide/sjtu-api/
+**获取 API key**:
+1. 登录 [my.sjtu.edu.cn](https://my.sjtu.edu.cn/)
+2. 搜索「"致远一号"AI模型API申请（测试）」→ 点击流程申请大模型API
+3. 申请通过后邮箱和交我办消息中收到 `base_url` 和 `api-key`
+
+> ⚠️ **注意事项**：
+> - API 仅限**校园网**访问（校外需通过 SJTU VPN）
+> - 请求中**必须包含 `user` 角色的消息**，否则 DeepSeek V3.2 不返回内容
+> - 速率限制：100 次/分钟，100,000 tokens/分钟，1,000,000,000 tokens/周
+> - API key 有效期至 2026-06-30
 
 ---
 
@@ -1024,6 +1039,21 @@ A: 调整 prompt 模板，增加更具体的约束；提高相似案例质量；
 ---
 
 ## 参考资料
+
+### SJTU API 可用模型
+
+| 模型名称 | 参数 | 调用 ID | 上下文 | 适用场景 |
+|---------|------|---------|--------|---------|
+| DeepSeek V3.2 | 685B | `deepseek-chat` | 32k | **通用文本（推荐）** |
+| DeepSeek V3.2 Think | 685B | `deepseek-reasoner` | 32k | 复杂推理 |
+| MiniMax-M2.7 | 230B | `minimax` / `minimax-m2.7` | 192k | 智能体任务 |
+| GLM-5.1 | 754B | `glm` / `glm-5.1` | 128k | 代码与长程任务 |
+| Qwen3.5-27B | 27B | `qwen` / `qwen3.5-27b` | 256k | 视觉+文本理解 |
+
+**API 端点**: `https://models.sjtu.edu.cn/api/v1/chat/completions`（OpenAI 兼容格式）
+**认证方式**: `Authorization: Bearer <your-api-key>`
+
+### 外部链接
 
 - SJTU API 文档: https://claw.sjtu.edu.cn/guide/sjtu-api/
 - HuggingFace Transformers: https://huggingface.co/docs/transformers
