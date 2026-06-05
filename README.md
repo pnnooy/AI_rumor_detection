@@ -1,4 +1,4 @@
-# AI Rumor Detection — 可解释谣言检测系统
+# 姜新晨I Rumor Detection — 可解释谣言检测系统
 
 **2026《人工智能导论》课程大作业**
 
@@ -11,9 +11,9 @@
 - [数据说明](#数据说明)
 - [系统架构](#系统架构)
 - [分工与详细工作指南](#分工与详细工作指南)
-  - [成员 A：数据预处理 + BERT 分类器](#member-a)
-  - [成员 B：LLM 解释生成 + 相似案例检索](#member-b)
-  - [成员 C：系统集成 + 评估 + 报告](#member-c)
+  - [姜新晨：数据预处理 + BERT 分类器](#jiang-xinchen)
+  - [靳卓达：LLM 解释生成 + 相似案例检索](#jin-zhuoda)
+  - [韩宇飞：系统集成 + 评估 + 报告](#han-yufei)
 - [环境配置](#环境配置)
 - [项目目录结构](#项目目录结构)
 - [可复现性保障](#可复现性保障)
@@ -67,16 +67,16 @@
 ```
 main ───────────────────────────────────────────────→
   │
-  ├── member-a/classifier ──→ PR → C review → merge
-  ├── member-b/explainer  ──→ PR → C review → merge
-  └── member-c/integration──→ PR → merge
+  ├── jiang-xinchen/classifier ──→ PR → 韩宇飞 review → merge
+  ├── jin-zhuoda/explainer  ──→ PR → 韩宇飞 review → merge
+  └── han-yufei/integration──→ PR → merge
 ```
 
 ### 命名规则
 
 | 分支类型 | 格式 | 示例 |
 |---------|------|------|
-| 功能分支 | `member-{a/b/c}/{模块}` | `member-a/classifier`, `member-b/retrieval` |
+| 功能分支 | `member-{a/b/c}/{模块}` | `jiang-xinchen/classifier`, `jin-zhuoda/retrieval` |
 | 修复分支 | `fix/{描述}` | `fix/api-timeout`, `fix/preprocess-url` |
 | 实验分支 | `exp/{描述}` | `exp/data-augmentation`, `exp/leave-one-event` |
 
@@ -85,19 +85,19 @@ main ─────────────────────────
 **1. 每人从 main 拉自己的分支**
 ```bash
 git checkout main && git pull origin main
-git checkout -b member-a/classifier   # A
-git checkout -b member-b/explainer    # B
-git checkout -b member-c/integration  # C
+git checkout -b jiang-xinchen/classifier   # 姜新晨
+git checkout -b jin-zhuoda/explainer    # 靳卓达
+git checkout -b han-yufei/integration  # 韩宇飞
 ```
 
 **2. 提交到自己的远程分支**
 ```bash
 git add <files>
 git commit -m "feat: xxx"
-git push origin member-a/classifier
+git push origin jiang-xinchen/classifier
 ```
 
-**3. 发起 Pull Request → C review → Merge**
+**3. 发起 Pull Request → 韩宇飞 review → Merge**
 
 ### Commit 规范
 
@@ -201,7 +201,7 @@ SJTU API 提供 5 个模型，最终选择 `deepseek-chat`（DeepSeek V3.2）：
 
 ## 分工与详细工作指南
 
-### <a id="member-a"></a> 👤 成员 A：数据预处理 + BERT 分类器
+### <a id="jiang-xinchen"></a> 👤 姜新晨：数据预处理 + BERT 分类器
 
 **职责**: 把原始数据变成能用的形式，训练并评估 DL 分类模型。
 
@@ -378,7 +378,7 @@ def extract_keywords(model, tokenizer, text, event_id, top_k=5):
     return token_scores[:top_k]
 ```
 
-**输出格式**（供成员 B 使用）:
+**输出格式**（供 靳卓达 使用）:
 ```python
 # 函数返回格式
 keywords = [
@@ -397,7 +397,7 @@ keywords = [
 
 ---
 
-#### 成员 A 交付清单
+#### 姜新晨 交付清单
 
 ```
 models/
@@ -411,7 +411,7 @@ logs/
   training.log           # 训练日志
 ```
 
-**对外接口**（供成员 C 集成）:
+**对外接口**（供 韩宇飞 集成）:
 ```python
 # 推理接口
 def predict(text: str, event_id: int) -> dict:
@@ -427,7 +427,7 @@ def predict(text: str, event_id: int) -> dict:
 
 ---
 
-### <a id="member-b"></a> 👤 成员 B：LLM 解释生成 + 相似案例检索
+### <a id="jin-zhuoda"></a> 👤 靳卓达：LLM 解释生成 + 相似案例检索
 
 **职责**: 构建相似案例检索系统，设计 LLM 提示词，生成高质量的自然语言解释。
 
@@ -640,7 +640,7 @@ EVENT_CONTEXT = {
 
 ---
 
-#### 成员 B 交付清单
+#### 靳卓达 交付清单
 
 ```
 retrieval.py             # 案例检索（CaseRetriever 类 + index 构建）
@@ -648,16 +648,16 @@ llm_explainer.py         # LLM 解释生成（LLMExplainer 类 + prompt 模板�
 event_context.py         # 事件背景信息
 data/
   index.pkl              # 训练集向量索引（预计算，加速推理）
-.env.example             # API key 配置模板
+.env.example             # 姜新晨PI key 配置模板
 ```
 
-**对外接口**（供成员 C 集成）:
+**对外接口**（供 韩宇飞 集成）:
 ```python
 def explain(text: str, dl_result: dict) -> str:
     """
     Args:
         text: 原推文文本
-        dl_result: 成员 A 的 predict() 返回结果
+        dl_result: 姜新晨 的 predict() 返回结果
         
     Returns:
         自然语言解释文本（中文）
@@ -666,9 +666,9 @@ def explain(text: str, dl_result: dict) -> str:
 
 ---
 
-### <a id="member-c"></a> 👤 成员 C：系统集成 + 评估 + 报告
+### <a id="han-yufei"></a> 👤 韩宇飞：系统集成 + 评估 + 报告
 
-**职责**: 串联 A 和 B 的模块，构建端到端推理管道，全面评估系统性能，撰写报告。
+**职责**: 串联 姜新晨 和 靳卓达 的模块，构建端到端推理管道，全面评估系统性能，撰写报告。
 
 #### 1. 系统集成
 
@@ -809,7 +809,7 @@ for event_id in range(7):
 
 ---
 
-#### 成员 C 交付清单
+#### 韩宇飞 交付清单
 
 ```
 inference.py             # 端到端推理脚本
@@ -853,7 +853,7 @@ tqdm==4.65.0
 python-dotenv==1.0.0
 ```
 
-### API 配置
+### 姜新晨PI 配置
 
 复制 `.env.example` 为 `.env`，填入 SJTU API key：
 
@@ -880,7 +880,7 @@ SJTU_API_KEY=sk-xxxxxxxxxxxxxxxx
 AI_rumor_detection/
 ├── README.md                     # 本文件
 ├── requirements.txt              # Python 依赖
-├── .env.example                  # API 配置模板
+├── .env.example                  # 姜新晨PI 配置模板
 ├── .gitignore
 │
 ├── rumer2026/                    # 原始数据
@@ -888,29 +888,29 @@ AI_rumor_detection/
 │   └── val.csv                   # 验证集 (401条)
 │
 ├── data/                         # 预处理后的数据
-│   ├── index.pkl                 # 检索索引（成员 B 生成）
+│   ├── index.pkl                 # 检索索引（靳卓达 生成）
 │   ├── processed_train.csv       # 清洗后的训练数据
 │   └── processed_val.csv         # 清洗后的验证数据
 │
 ├── models/                       # DL 模型相关
-│   ├── classifier.py             # 模型定义（成员 A）
-│   └── keyword_extractor.py      # 关键词提取（成员 A）
+│   ├── classifier.py             # 模型定义（姜新晨）
+│   └── keyword_extractor.py      # 关键词提取（姜新晨）
 │
 ├── checkpoints/                  # 训练产物
-│   └── best_model.pt             # 最佳模型权重（成员 A 产出）
+│   └── best_model.pt             # 最佳模型权重（姜新晨 产出）
 │
 ├── logs/                         # 训练日志
 │   └── training.log
 │
-├── train.py                      # 训练脚本（成员 A）
-├── preprocess.py                 # 数据预处理（成员 A）
+├── train.py                      # 训练脚本（姜新晨）
+├── preprocess.py                 # 数据预处理（姜新晨）
 │
-├── retrieval.py                  # 案例检索（成员 B）
-├── llm_explainer.py              # LLM 解释（成员 B）
-├── event_context.py              # 事件背景（成员 B）
+├── retrieval.py                  # 案例检索（靳卓达）
+├── llm_explainer.py              # LLM 解释（靳卓达）
+├── event_context.py              # 事件背景（靳卓达）
 │
-├── inference.py                  # 端到端推理（成员 C）
-├── evaluate.py                   # 评估脚本（成员 C）
+├── inference.py                  # 端到端推理（韩宇飞）
+├── evaluate.py                   # 评估脚本（韩宇飞）
 │
 ├── results/                      # 推理结果
 │   └── val_results.csv
@@ -971,7 +971,7 @@ def set_seed(seed=42):
 ```python
 # 在文本前拼接事件 token
 text = f"[EVENT_{event_id}] {original_text}"
-# BERT 能学到 event 和谣言之间的关联
+# 靳卓达ERT 能学到 event 和谣言之间的关联
 ```
 
 **预期效果**: 准确率提升 2-3%
@@ -1109,10 +1109,10 @@ for held_out_event in range(7):
 
 | 阶段 | 内容 | 建议时间 |
 |------|------|----------|
-| 第1周 | 环境搭建、数据预处理（A）、检索索引构建（B）、集成框架（C） | 并行开发 |
-| 第2周 | 分类器训练+调参（A）、提示词调试+API测试（B）、评估脚本（C） | 并行开发 |
+| 第1周 | 环境搭建、数据预处理（姜新晨）、检索索引构建（靳卓达）、集成框架（韩宇飞） | 并行开发 |
+| 第2周 | 分类器训练+调参（姜新晨）、提示词调试+API测试（靳卓达）、评估脚本（韩宇飞） | 并行开发 |
 | 第3周 | 模块联调、端到端测试、优化项 1️⃣ 2️⃣ | 集成测试 |
-| 第4周 | 优化项 3️⃣ 4️⃣、报告撰写（C 主笔，A B 补充各自部分） | 收尾 |
+| 第4周 | 优化项 3️⃣ 4️⃣、报告撰写（韩宇飞 主笔，姜新晨 靳卓达 补充各自部分） | 收尾 |
 
 ---
 

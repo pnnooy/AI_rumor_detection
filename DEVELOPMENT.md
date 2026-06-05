@@ -8,9 +8,9 @@
 
 | 成员 | 职责 | 交付物 |
 |------|------|--------|
-| **A** | 数据预处理 + BERT 分类器 + 关键词提取 | `models/classifier.py`, `models/keyword_extractor.py`, `preprocess.py`, `train.py`, `checkpoints/best_model.pt` |
-| **B** | 相似案例检索 + LLM 解释生成 | `retrieval.py`, `llm_explainer.py`, `event_context.py`, `data/index.pkl` |
-| **C** | 项目管理 + 系统集成 + 评估 + 报告 | `inference.py`, `evaluate.py`, `results/`, `figures/`, `report/` |
+| **姜新晨** | 数据预处理 + BERT 分类器 + 关键词提取 | `models/classifier.py`, `models/keyword_extractor.py`, `preprocess.py`, `train.py`, `checkpoints/best_model.pt` |
+| **靳卓达** | 相似案例检索 + LLM 解释生成 | `retrieval.py`, `llm_explainer.py`, `event_context.py`, `data/index.pkl` |
+| **韩宇飞** | 项目管理 + 系统集成 + 评估 + 报告 | `inference.py`, `evaluate.py`, `results/`, `figures/`, `report/` |
 
 ---
 
@@ -21,16 +21,16 @@
 ```
 main ─────────────────────────────────────────────────→
   │
-  ├── member-a/classifier ──→ PR → merge
-  ├── member-b/explainer  ──→ PR → merge
-  └── member-c/integration──→ PR → merge
+  ├── jiang-xinchen/classifier ──→ PR → merge
+  ├── jin-zhuoda/explainer  ──→ PR → merge
+  └── han-yufei/integration──→ PR → merge
 ```
 
 ### 命名规则
 
 | 分支 | 命名格式 | 示例 |
 |------|---------|------|
-| 功能分支 | `member-{角色}/{模块名}` | `member-a/classifier`, `member-b/retrieval` |
+| 功能分支 | `member-{角色}/{模块名}` | `jiang-xinchen/classifier`, `jin-zhuoda/retrieval` |
 | 修复分支 | `fix/{描述}` | `fix/api-timeout`, `fix/preprocess-url` |
 | 实验分支 | `exp/{描述}` | `exp/data-augmentation`, `exp/leave-one-event` |
 
@@ -40,9 +40,9 @@ main ─────────────────────────
 ```bash
 git checkout main
 git pull origin main
-git checkout -b member-a/classifier   # A
-git checkout -b member-b/explainer    # B
-git checkout -b member-c/integration  # C
+git checkout -b jiang-xinchen/classifier   # 姜新晨
+git checkout -b jin-zhuoda/explainer    # 靳卓达
+git checkout -b han-yufei/integration  # 韩宇飞
 ```
 
 **第二步：日常开发**
@@ -50,7 +50,7 @@ git checkout -b member-c/integration  # C
 # 开发中，随时提交到自己的分支
 git add <files>
 git commit -m "feat: 完成数据预处理函数"
-git push origin member-a/classifier   # 推到自己的远程分支
+git push origin jiang-xinchen/classifier   # 推到自己的远程分支
 ```
 
 **第三步：合并到 main**
@@ -63,8 +63,8 @@ git push origin member-a/classifier   # 推到自己的远程分支
    - 这个 PR 做了什么
    - 如何测试
    - 新增了哪些文件/依赖
-4. 指定 **C** 为 reviewer
-5. C review 通过后 → Merge
+4. 指定 **韩宇飞** 为 reviewer
+5. 韩宇飞 review 通过后 → Merge
 
 ### Commit 规范
 
@@ -88,9 +88,9 @@ test: 测试相关   test: 添加跨事件评估测试
 
 ## 三、接口契约
 
-> ⚠️ A 和 B 必须严格按照以下接口实现，C 的集成代码依赖这些接口。
+> ⚠️ 姜新晨 和 靳卓达 必须严格按照以下接口实现，韩宇飞 的集成代码依赖这些接口。
 
-### A 的接口
+### 姜新晨 的接口
 
 ```python
 def predict(text: str, event_id: int) -> dict:
@@ -111,7 +111,7 @@ def load_model(checkpoint_path: str = "checkpoints/best_model.pt"):
     """加载模型和 tokenizer，供 inference.py 调用"""
 ```
 
-### B 的接口
+### 靳卓达 的接口
 
 ```python
 class CaseRetriever:
@@ -149,7 +149,7 @@ def generate_explanation(text: str, dl_result: dict, cases: list, event_context:
 
 ---
 
-## 四、C 的工作阶段
+## 四、韩宇飞 的工作阶段
 
 ### 阶段一：搭骨架（第 1 周，不依赖任何人）
 
@@ -159,22 +159,22 @@ def generate_explanation(text: str, dl_result: dict, cases: list, event_context:
 - [ ] 搭建 `inference.py` 骨架（接口定义好，函数体留 `pass` 或 `raise NotImplementedError`）
 - [ ] 搭建 `evaluate.py` 骨架（评估指标函数先写好）
 - [ ] 初始化 Git，创建 main 分支，推送到 GitHub
-- [ ] 帮 A 和 B 创建他们的开发分支
-- [ ] 确保 A 和 B 都清楚自己的接口契约
+- [ ] 帮 姜新晨 和 靳卓达 创建他们的开发分支
+- [ ] 确保 姜新晨 和 靳卓达 都清楚自己的接口契约
 
-### 阶段二：并行开发期（第 1-2 周，轻度依赖 A B）
+### 阶段二：并行开发期（第 1-2 周，轻度依赖 姜新晨 和 靳卓达）
 
-- [ ] **Git 管理**：关注 A 和 B 的 PR，做 code review
+- [ ] **Git 管理**：关注 姜新晨 和 靳卓达 的 PR，做 code review
 - [ ] **报告框架**：打开模板 doc，搭好章节结构
 - [ ] **评估脚本**：完善 `evaluate.py`，用假数据验证所有指标计算正确
 - [ ] **事件背景**：读各 event 的推文样本，补完 `event_context.py`
-- [ ] **定期同步**：每 2-3 天问 A 和 B 进度，确认接口无变更
+- [ ] **定期同步**：每 2-3 天问 姜新晨 和 靳卓达 进度，确认接口无变更
 - [ ] **准备演示**：确认 `--no-llm` 模式可以先跑通分类部分
 
-### 阶段三：集成联调（第 3 周，依赖 A B 交付）
+### 阶段三：集成联调（第 3 周，依赖 姜新晨 和 靳卓达 交付）
 
-- [ ] A 的 `predict()` 函数在 C 的环境跑通
-- [ ] B 的 `CaseRetriever.search()` + `generate_explanation()` 在 C 的环境跑通
+- [ ] 姜新晨 的 `predict()` 函数在 韩宇飞 的环境跑通
+- [ ] 靳卓达 的 `CaseRetriever.search()` + `generate_explanation()` 在 韩宇飞 的环境跑通
 - [ ] 端到端推理管道串联成功
 - [ ] val.csv 全量（401条）推理通过，结果写入 `results/val_results.csv`
 - [ ] `--no-llm` 模式验证可用
@@ -187,9 +187,9 @@ def generate_explanation(text: str, dl_result: dict, cases: list, event_context:
 - [ ] 错误案例分析（选 20 个分类错误的）
 - [ ] Leave-One-Event-Out 实验（如果时间允许）
 - [ ] 撰写报告：
-  - C 写：架构概述、检测结果分析、可解释性分析、工作总结
-  - A 补充：数据预处理、分类器训练、关键词提取章节
-  - B 补充：案例检索、LLM 提示词设计、解释生成章节
+  - 韩宇飞 写：架构概述、检测结果分析、可解释性分析、工作总结
+  - 姜新晨 补充：数据预处理、分类器训练、关键词提取章节
+  - 靳卓达 补充：案例检索、LLM 提示词设计、解释生成章节
 - [ ] 最终校对、排版、提交
 
 ---
@@ -234,10 +234,10 @@ python evaluate.py --input results/val_results.csv --output-dir figures/
 ```
 错误: RuntimeError: Error(s) in loading state_dict
 原因: 模型定义和保存时不一致
-解决: 确认 models/classifier.py 未被修改，通知 A 重新训练
+解决: 确认 models/classifier.py 未被修改，通知 姜新晨 重新训练
 ```
 
-### API 调用返回空
+### 姜新晨PI 调用返回空
 ```
 错误: LLM 返回空内容
 原因: 请求中缺少 user 角色的消息
@@ -247,8 +247,8 @@ python evaluate.py --input results/val_results.csv --output-dir figures/
 ### 检索索引文件缺失
 ```
 错误: FileNotFoundError: data/index.pkl
-原因: B 还没有构建索引
-解决: 让 B 运行一次 build_index() 生成索引文件，然后手动传递
+原因: 靳卓达 还没有构建索引
+解决: 让 靳卓达 运行一次 build_index() 生成索引文件，然后手动传递
 ```
 
 ### 模块导入失败

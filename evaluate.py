@@ -1,5 +1,5 @@
 """
-评估脚本 — 成员 C 实现
+评估脚本 — 韩宇飞 实现
 
 用法:
     python evaluate.py --input results/val_results.csv

@@ -1,5 +1,5 @@
 """
-端到端推理管道 — 成员 C 实现
+端到端推理管道 — 韩宇飞 实现
 
 用法:
     python inference.py --input rumer2026/val.csv --output results/val_results.csv
@@ -17,12 +17,12 @@ load_dotenv()
 
 
 # ============================================================
-# 接口定义 — 成员 A 实现
+# 接口定义 — 姜新晨 实现
 # ============================================================
 
 def load_model(checkpoint_path: str = "checkpoints/best_model.pt"):
     """
-    成员 A 实现：加载分类模型和 tokenizer
+    姜新晨 实现：加载分类模型和 tokenizer
 
     Args:
         checkpoint_path: 模型权重文件路径
@@ -30,12 +30,12 @@ def load_model(checkpoint_path: str = "checkpoints/best_model.pt"):
     Returns:
         (model, tokenizer) 元组
     """
-    raise NotImplementedError("成员 A 实现 — 加载 BERT 模型和 tokenizer")
+    raise NotImplementedError("姜新晨 实现 — 加载 BERT 模型和 tokenizer")
 
 
 def predict(text: str, event_id: int) -> dict:
     """
-    成员 A 实现：对单条推文做分类预测 + 关键词提取
+    姜新晨 实现：对单条推文做分类预测 + 关键词提取
 
     Args:
         text:     原推文文本（未经清洗）
@@ -48,20 +48,20 @@ def predict(text: str, event_id: int) -> dict:
             "keywords":   [("word", 0.23), ("word2", 0.16), ...]  # top-5
         }
     """
-    raise NotImplementedError("成员 A 实现 — 分类推理 + attention 关键词提取")
+    raise NotImplementedError("姜新晨 实现 — 分类推理 + attention 关键词提取")
 
 
 # ============================================================
-# 接口定义 — 成员 B 实现
+# 接口定义 — 靳卓达 实现
 # ============================================================
 
 class CaseRetriever:
     """
-    成员 B 实现：相似案例检索器
+    靳卓达 实现：相似案例检索器
     """
     def load_index(self, index_path: str = "data/index.pkl"):
         """加载训练集向量索引"""
-        raise NotImplementedError("成员 B 实现 — 加载 sentence-transformer 索引")
+        raise NotImplementedError("靳卓达 实现 — 加载 sentence-transformer 索引")
 
     def search(self, query_text: str, top_k: int = 3) -> list:
         """
@@ -73,7 +73,7 @@ class CaseRetriever:
                 ...
             ]
         """
-        raise NotImplementedError("成员 B 实现 — 余弦相似度检索")
+        raise NotImplementedError("靳卓达 实现 — 余弦相似度检索")
 
 
 def generate_explanation(
@@ -83,7 +83,7 @@ def generate_explanation(
     event_context: str
 ) -> str:
     """
-    成员 B 实现：调用 LLM 生成中文解释
+    靳卓达 实现：调用 LLM 生成中文解释
 
     Args:
         text:          原推文文本
@@ -94,11 +94,11 @@ def generate_explanation(
     Returns:
         中文解释字符串 (150-300字)
     """
-    raise NotImplementedError("成员 B 实现 — LLM 提示词 + API 调用")
+    raise NotImplementedError("靳卓达 实现 — LLM 提示词 + API 调用")
 
 
 # ============================================================
-# 成员 C 实现：主推理管道
+# 韩宇飞 实现：主推理管道
 # ============================================================
 
 def run_inference(
@@ -109,7 +109,7 @@ def run_inference(
     index_path: str = "data/index.pkl"
 ):
     """
-    端到端推理管道：串联 A 的 DL 分类 + B 的检索和 LLM 解释
+    端到端推理管道：串联 姜新晨 的 DL 分类 + 靳卓达 的检索和 LLM 解释
 
     Args:
         input_csv:  输入 CSV（格式同 val.csv）
@@ -130,7 +130,7 @@ def run_inference(
         model, tokenizer = load_model(model_path)
         print("  ✓ 模型加载成功")
     except NotImplementedError:
-        print("  ✗ 模型尚未实现（成员 A 待完成），使用占位模式继续")
+        print("  ✗ 模型尚未实现（姜新晨 待完成），使用占位模式继续")
         model, tokenizer = None, None
 
     # 2. 加载检索器
@@ -142,7 +142,7 @@ def run_inference(
             retriever.load_index(index_path)
             print("  ✓ 索引加载成功")
         except NotImplementedError:
-            print("  ✗ 检索模块尚未实现（成员 B 待完成），将不使用相似案例")
+            print("  ✗ 检索模块尚未实现（靳卓达 待完成），将不使用相似案例")
             retriever = None
     else:
         print("[2/4] --no-llm 模式，跳过检索")
@@ -167,7 +167,7 @@ def run_inference(
         try:
             dl_result = predict(text, event_id)
         except NotImplementedError:
-            # 占位：在 A 实现之前使用假结果
+            # 占位：在 姜新晨 实现之前使用假结果
             dl_result = {"label": 0, "confidence": 0.5, "keywords": [("待实现", 0.0)]}
 
         # 检索相似案例
@@ -187,7 +187,7 @@ def run_inference(
                     EVENT_CONTEXT.get(event_id, "")
                 )
             except NotImplementedError:
-                explanation = "[待实现 — 成员 B]"
+                explanation = "[待实现 — 靳卓达]"
             except Exception as e:
                 explanation = f"[LLM 调用失败: {e}]"
 
