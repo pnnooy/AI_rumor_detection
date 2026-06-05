@@ -103,6 +103,20 @@
 | LLM 解释 | DeepSeek-V3.2 via SJTU API | 远程 API 调用 |
 | 框架 | PyTorch 2.x + OpenAI SDK | — |
 
+### LLM 模型选型
+
+SJTU API 提供 5 个模型，最终选择 `deepseek-chat`（DeepSeek V3.2）：
+
+| 模型 | 判断 | 理由 |
+|------|------|------|
+| **DeepSeek V3.2** `deepseek-chat` | ✅ 选用 | 685B 参数，通用文本最强，中文输出好，指令跟随稳定，32k 上下文对本任务完全够用 |
+| DeepSeek Reasoner `deepseek-reasoner` | ❌ | 深度推理模式更适合数学/逻辑题，生成解释不需要额外的"思考链"，反而更慢更费 token |
+| MiniMax-M2.7 `minimax` | ❌ | 230B 参数，偏智能体/工具调用，与我们的结构化解释生成任务不匹配 |
+| GLM-5.1 `glm` | ❌ | 754B 参数最大但侧重代码与超长文本，杀鸡用牛刀，中文解释质量不如 DeepSeek 稳定 |
+| Qwen3.5-27B `qwen` | ❌ | 仅 27B，参数最小，解释质量和一致性可能不足；强项是视觉多模态，本任务用不上 |
+
+> **结论**：`deepseek-chat` 最适合"给定结构化信息 → 输出规整中文解释"这个任务，参数够大、中文好、速度快，且天然满足 API 对 user 角色的要求。
+
 ---
 
 ## 分工与详细工作指南
