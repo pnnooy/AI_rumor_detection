@@ -1,10 +1,17 @@
 """
-对抗样本鲁棒性分析 — 韩宇飞 实现
+对抗样本攻击与防护 — 韩宇飞 实现
 
-对 DL 分类器进行词级同义词替换攻击，评估系统鲁棒性。
+包含三部分：
+  1. 攻击生成：WordNet 同义词替换对抗样本
+  2. 防护机制：LLM 交叉验证防御
+  3. 评估对比：攻击前后 + 防护前后的效果对比
 
 用法:
-    python adversarial.py --input results/val_results.csv --original rumer2026/val.csv
+    # 生成对抗样本
+    python adversarial.py --input results/val_results.csv --original rumer2026/val.csv --mode generate
+
+    # 评估防护效果（需要已有对抗样本推理结果）
+    python adversarial.py --input results/val_results.csv --adversarial results/adversarial_results.csv --mode evaluate
 """
 
 import argparse
