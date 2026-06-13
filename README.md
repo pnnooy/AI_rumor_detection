@@ -911,6 +911,7 @@ AI_rumor_detection/
 │
 ├── inference.py                  # 端到端推理（韩宇飞）
 ├── evaluate.py                   # 评估脚本（韩宇飞）
+├── adversarial.py                # 对抗样本鲁棒性分析（韩宇飞）
 │
 ├── results/                      # 推理结果
 │   └── val_results.csv
@@ -1087,6 +1088,91 @@ for held_out_event in range(7):
 
 ---
 
+### 7️⃣ 对抗样本鲁棒性分析（优先级：⭐⭐⭐⭐）
+
+**负责人：韩宇飞（C）**
+
+**背景**: 老师课堂上讲到了对抗样本攻击在 AI 训练和使用中的安全问题——这正是系统鲁棒性评估的核心内容，融入项目可以加分。
+
+**核心思路**:
+
+```
+原推文 ──→ [DL 分类器] ──→ 判对 ✓
+    │
+    │ 词级扰动（同义词替换）
+    ▼
+扰动推文 ──→ [DL 分类器] ──→ 判错 ✗  ← 攻击成功
+    │
+    ▼
+扰动推文 ──→ [LLM 解释器] ──→ 解释变了吗？← 解释一致性分析
+```
+
+**具体实现**:
+
+使用 WordNet 同义词替换对验证集每条推文生成对抗样本，测试系统鲁棒性。
+
+```python
+# adversarial.py — 韩宇飞 实现
+
+import nltk
+from nltk.corpus import wordnet
+import random
+
+nltk.download('wordnet')
+nltk.download('averaged_perceptron_tagger')
+
+def get_synonym(word: str) -> str | None:
+    """获取 word 的一个同义词"""
+    synsets = wordnet.synsets(word)
+    if not synsets:
+        return None
+    lemmas = synsets[0].lemma_names()
+    synonyms = [l for l in lemmas if l.lower() != word.lower()]
+    return random.choice(synonyms) if synonyms else None
+
+def generate_adversarial(text: str, max_swaps: int = 2) -> str:
+    """对一条推文生成对抗样本（替换 1-2 个词为同义词）"""
+    words = text.split()
+    candidates = []  # 收集有同义词的词位置
+    for i, w in enumerate(words):
+        if len(w) > 3 and w.isalpha():  # 跳过短词和非字母词
+            syn = get_synonym(w)
+            if syn:
+                candidates.append(i)
+
+    if not candidates:
+        return text  # 无法生成对抗样本
+
+    # 最多替换 max_swaps 个词
+    n_swaps = min(max_swaps, len(candidates))
+    swap_indices = random.sample(candidates, n_swaps)
+
+    new_words = words.copy()
+    for idx in swap_indices:
+        syn = get_synonym(new_words[idx])
+        if syn:
+            new_words[idx] = syn
+
+    return ' '.join(new_words)
+```
+
+**三组实验**:
+
+| 实验 | 做法 | 报告产出 |
+|------|------|---------|
+| **攻击成功率** | 对验证集 401 条各生成 1 个对抗样本，统计 label 被翻转的比例 | "X% 的样本可被简单词级攻击翻转" |
+| **脆弱模式分析** | 按事件/文本长度/原置信度分组，分析哪些样本更容易被攻击 | 各事件攻击成功率柱状图 |
+| **解释一致性** | 对比原推文和对抗样本的 LLM 解释，分析是否自相矛盾 | 选 3 个典型案例展示 |
+
+**预期效果**:
+- 报告新增"系统鲁棒性分析"章节（2-3 页），呼应课堂内容
+- 展示对 AI 系统安全性的批判性思考
+- 已有评估框架可直接复用，改动量小
+
+**工作量**: ~100 行代码 + 报告 2-3 页
+
+---
+
 ### 优化优先级总览
 
 ```
@@ -1097,6 +1183,9 @@ for held_out_event in range(7):
 评估阶段做:
   3️⃣ 跨事件泛化评估        ★★★★
   4️⃣ 解释质量自评          ★★★★
+
+进阶加分:
+  7️⃣ 对抗样本鲁棒性分析    ★★★★  (韩宇飞)
 
 时间充裕再做:
   5️⃣ 短文本数据增强        ★★★
@@ -1113,6 +1202,7 @@ for held_out_event in range(7):
 | 第2周 | 分类器训练+调参（姜新晨）、提示词调试+API测试（靳卓达）、评估脚本（韩宇飞） | 并行开发 |
 | 第3周 | 模块联调、端到端测试、优化项 1️⃣ 2️⃣ | 集成测试 |
 | 第4周 | 优化项 3️⃣ 4️⃣、报告撰写（韩宇飞 主笔，姜新晨 靳卓达 补充各自部分） | 收尾 |
+| 第5周 | 优化项 7️⃣ 对抗样本鲁棒性分析（韩宇飞）、最终校对排版 | 加分冲刺 |
 
 ---
 
