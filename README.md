@@ -45,7 +45,7 @@ python evaluate.py --input results/val_results.csv --output-dir figures/
 | `checkpoints/best_model.pt` | 1.32 GB | RoBERTa-large 模型权重 |
 | `data/index.pkl` | ~5 MB | 训练集检索索引 |
 
-> 链接：[云盘地址待补充]
+> 链接：[Rumor_detection — SJTU Pan](https://pan.sjtu.edu.cn/web/share/bb890ce0551de5fe239de6b8b1673e88)
 
 ---
 
