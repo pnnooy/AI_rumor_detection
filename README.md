@@ -245,13 +245,822 @@ train.csv 2840 条 vs val.csv 401 条: id 完全不重复, 仅 1 条文本巧合
 
 ---
 
+## 🚀 优化任务分工 (2026-06-20)
+
+> 主线已完成：RoBERTa-large 分类器 89.53%，端到端管道可运行。以下两个并行优化任务，完成后合并入 main。
+
+---
+
+### 任务一：对抗样本攻击与防护 🔴🛡️ — 姜新晨
+
+> **评分关联**：老师明确表示"考虑对抗攻击的防护能力可以有额外加分"。对应评分中"创新性/鲁棒性"加分项。
+> **目标**：证明系统在恶意扰动下不会轻易被欺骗，同时展现攻击+防护双重设计思想。
+
+---
+
+#### 📋 Phase 1：理解现有代码（15 分钟）
+
+**必读文件（按顺序）**：
+
+| 文件 | 关注点 |
+|------|--------|
+| `adversarial.py` | 攻击生成 `generate_adversarial()` + 鲁棒性分析框架 |
+| `train.py` L131-170 | `--adversarial` 模式如何在训练中注入对抗样本 |
+| `inference.py` L71-280 | 完整推理管道，理解输入输出格式 |
+| `evaluate.py` | 评估脚本，理解 `results_csv` 的列结构 |
+
+**关键理解**：
+1. `adversarial.py` 的 `generate_adversarial()` 已能用 WordNet 同义词替换 1-2 个词，但 `analyze_robustness()` 是不完整的（到第 2 步就停了，提示用户手动运行 inference.py）
+2. `train.py` 的对抗训练模式有一个 **bug**：L303 使用 `model.bert.resize_token_embeddings()`，但 `RumorClassifier` 的属性名是 `model.encoder`（因为升级到了 AutoModel），会导致 `AttributeError`
+3. 当前缺少 LLM 交叉验证防护——这是你要新增的核心功能
+
+---
+
+#### 📋 Phase 2：修复 train.py 对抗训练 Bug（10 分钟）
+
+**文件**：`train.py`
+
+**Bug 位置**：L303
+```python
+# 当前（错误）：
+model.bert.resize_token_embeddings(len(tokenizer))
+
+# 修复为：
+model.encoder.resize_token_embeddings(len(tokenizer))
+```
+
+**验证**：修复后运行 `python train.py --adversarial --epochs 1 --batch_size 16`，确认不报 `AttributeError`。
+
+**同时检查** `RumorClassifier.__init__()` 是否也需要修改——当前 `models/classifier.py` 使用 `AutoModel`，属性名是 `self.encoder`，确认无误。
+
+---
+
+#### 📋 Phase 3：完善 adversarial.py — 端到端攻击评估（40 分钟）
+
+**目标**：让 `analyze_robustness()` 能够**自动完成**整个攻防对比流程，不再需要用户手动操作。
+
+**3.1 添加自动推理函数**
+
+在 `adversarial.py` 中添加新函数 `run_inference_on_adversarial()`：
+
+```python
+def run_inference_on_adversarial(
+    adversarial_csv: str,       # Phase 1 生成的对抗样本 CSV
+    output_csv: str,            # 推理结果输出路径
+    model_path: str = "checkpoints/best_model.pt",
+    device: str = "cpu"
+) -> pd.DataFrame:
+    """
+    用现有分类器对对抗样本做推理（仅 DL 分类，不调 LLM）
+    
+    步骤：
+    1. 加载模型 load_model(model_path, device)
+    2. 逐条调用 predict(text, event_id)
+    3. 保存结果 CSV，包含列: id, text, event, true_label, pred_label, confidence, keywords
+    4. 返回 DataFrame
+    
+    关键注意事项：
+    - 必须按原始 event_id 传入 predict()，否则 [EVENT_N] token 会错配
+    - 使用 --no-llm 等效逻辑（纯分类，不调 API）
+    - 进度条用 tqdm 或每 50 条打印一次
+    """
+    # TODO: 实现
+```
+
+**实现提示**：参考 `inference.py` 的 Phase A 部分（L137-164），抽取其分类逻辑。核心循环：
+
+```python
+from models.classifier import load_model
+from models.keyword_extractor import predict
+
+model, tokenizer = load_model(model_path, device=device)
+
+results = []
+for i, (_, row) in enumerate(df.iterrows()):
+    text = str(row['text'])
+    event_id = int(row['event'])
+    dl_result = predict(text, event_id)
+    results.append({
+        'id': row['id'],
+        'text': text,
+        'event': event_id,
+        'true_label': int(row['label']),
+        'pred_label': dl_result['label'],
+        'confidence': dl_result['confidence'],
+        'keywords': ','.join([w for w, _ in dl_result['keywords']]),
+        'explanation': '',  # 对抗样本不需要 LLM 解释
+    })
+    if (i + 1) % 50 == 0:
+        print(f"  推理进度: {i+1}/{len(df)}")
+```
+
+**3.2 增强 `analyze_robustness()` 为全自动流程**
+
+重构 `analyze_robustness()`，将其从"打印提示"变为"自动执行"：
+
+```python
+def analyze_robustness(
+    results_csv: str,          # 原始 val_results.csv
+    original_csv: str,         # 原始 val.csv
+    output_dir: str = "results",
+    model_path: str = "checkpoints/best_model.pt",
+    device: str = "cpu",
+    auto_run_inference: bool = True  # 新增：自动运行推理
+):
+    """
+    全自动鲁棒性分析管道：
+    
+    Step 1: 生成对抗样本 → {output_dir}/adversarial_samples.csv
+    Step 2: 自动推理对抗样本 → {output_dir}/adversarial_results.csv
+    Step 3: 对比原始 vs 对抗预测，计算翻转率
+    Step 4: 按事件/置信度分组分析脆弱性
+    Step 5: 保存分析报告 → {output_dir}/adversarial_report.txt
+    
+    所有步骤自动串联，无需人工干预。
+    """
+```
+
+**3.3 增强 `compare_robustness()` 输出**
+
+完善对比函数，额外输出：
+- 翻转样本的原文 vs 对抗文本对照表（前 20 条）
+- 哪些词被替换最频繁（WordNet 替换统计）
+- 高置信度翻转（原 confidence > 0.9 但仍被翻转）——这是最危险的攻击
+
+**3.4 新增：脆弱性分报告**
+
+添加函数保存文本报告：
+
+```python
+def save_adversarial_report(..., output_dir: str):
+    """保存 {output_dir}/adversarial_report.txt"""
+    # 包含：
+    # - 攻击成功率（整体 + 各事件）
+    # - 高置信度翻转数量
+    # - 最常被替换的词 Top 10
+    # - 翻转方向分布 (0→1 vs 1→0)
+```
+
+---
+
+#### 📋 Phase 4：实现 LLM 交叉验证防护（50 分钟）⭐ 新增核心功能
+
+**目标**：当 DL 模型对原始文本和对抗文本的预测**不一致**时，调用 LLM 作为独立裁判进行二次判断。这是"防护"侧的亮点。
+
+**4.1 在 `adversarial.py` 中添加 `llm_cross_validation()`**
+
+```python
+def llm_cross_validation(
+    text: str,                          # 原推文文本
+    dl_pred_label: int,                 # DL 模型预测 (可能是对抗后的)
+    dl_confidence: float,               # DL 置信度
+    original_pred_label: int,           # 原始文本的 DL 预测
+    event_context: str = "",            # 事件背景
+    explainer: "LLMExplainer | None" = None
+) -> dict:
+    """
+    LLM 交叉验证：当 DL 预测不一致时，让 LLM 独立判断
+    
+    调用流程：
+    1. 构造专门的法律/事实核查 prompt（不同于解释 prompt）
+    2. LLM 基于事件背景 + 常识判断推文真实性
+    3. 返回 {'llm_label': int, 'llm_reasoning': str, 'verdict': str}
+    
+    verdict 取值：
+    - "支持DL"  — LLM 同意 DL 判断
+    - "推翻DL"  — LLM 认为 DL 判断错误
+    - "不确定"  — LLM 无法确定，建议人工复核
+    
+    关键设计：
+    - prompt 必须强调 LLM 是独立判断，不受 DL 结果影响
+    - temperature=0.1（比解释更确定）
+    - 如果 LLM 调用失败 → verdict="不确定"（保守策略，不强行纠错）
+    """
+```
+
+**4.2 LLM 交叉验证专用 Prompt 模板**：
+
+```python
+CROSS_VAL_PROMPT = """你是一个独立的谣言事实核查员。请仅根据以下信息判断这条推文是否在传播谣言。
+
+[事件背景]
+{event_context}
+
+[推文内容]
+"{text}"
+
+[已知信息]
+- 一个深度学习模型将这条推文判定为{"谣言" if dl_label == 1 else "非谣言"}（置信度 {confidence}）
+- 但你可能面对的是被恶意修改过的推文文本（通过同义词替换等方式绕过检测）
+- 请基于你的常识和对该事件背景的理解，独立判断这条推文是否在传播虚假信息
+
+请用以下格式回复：
+判断: [谣言/非谣言/不确定]
+理由: [一句话说明判断依据]
+"""
+```
+
+**4.3 在 `analyze_robustness()` 中集成 LLM 交叉验证**
+
+在 Step 3（对比原始 vs 对抗预测）之后新增 Step 3.5：
+
+```python
+# Step 3.5: LLM 交叉验证（仅对翻转样本）
+if use_llm_cross_validation and explainer is not None:
+    flipped_mask = (original_results['pred_label'] != adversarial_results['pred_label'])
+    flipped_indices = flipped_mask[flipped_mask].index
+    
+    for idx in flipped_indices:
+        verdict = llm_cross_validation(
+            text=original_texts[idx],
+            dl_pred_label=adv_preds[idx],
+            dl_confidence=adv_confs[idx],
+            original_pred_label=orig_preds[idx],
+            event_context=EVENT_CONTEXT.get(events[idx], ""),
+            explainer=explainer
+        )
+        # 记录 LLM 是否成功防御了这次攻击
+```
+
+输出统计：
+```
+LLM 交叉验证结果 (针对 {n_flipped} 条翻转样本):
+  支持DL判断:     X 条 (LLM 同意 DL 对抗后的判断 → 攻击可能有效)
+  推翻DL判断:     Y 条 (LLM 纠正了对抗扰动 → 防御成功)
+  不确定:          Z 条 (建议人工复核)
+  防御成功率:      Y/(X+Y+Z)%
+```
+
+---
+
+#### 📋 Phase 5：四组对照实验（30 分钟）
+
+**实验设计**（在 `adversarial.py` 中新增 `run_defense_experiments()`）：
+
+| 实验组 | 模型 | 对抗样本 | 防护机制 | 预期翻转率 |
+|--------|------|:---:|------|:---:|
+| **A 无防护** | best_model.pt | ✅ | 无 | 15-25% |
+| **B 对抗训练** | 待训练 (--adversarial) | ✅ | 训练时注入对抗样本 | 8-15% |
+| **C LLM交叉验证** | best_model.pt | ✅ | LLM 对翻转样本二次判断 | 5-10% |
+| **D 双重防护** | 对抗训练模型 | ✅ | 对抗训练 + LLM 交叉验证 | 3-8% |
+
+**实验 A**：直接对对抗样本推理（Phase 3 已完成）
+**实验 B**：需要用 `--adversarial` 训练新模型
+```bash
+python train.py --adversarial --epochs 8 --lr 1e-5 --max_len 128 --batch_size 16 --save_dir checkpoints/adv_defense
+```
+**实验 C**：实验 A 的结果 + Phase 4 的 LLM 交叉验证
+**实验 D**：实验 B 的模型 + LLM 交叉验证
+
+**注意**：实验 B 需要 GPU（或 CPU 长时间运行）。如果没有 GPU，使用已有 `best_model.pt` 做实验 A/C 即可，实验 B/D 标记为"待验证"。
+
+**输出对比表**：
+
+```python
+def print_defense_comparison(results: dict):
+    """打印四组实验对比表"""
+    print("""
+    ╔══════════════════════════════════════════════════════╗
+    ║           对抗攻击与防护 — 四组实验对比              ║
+    ╠══════════╦══════════╦══════════╦══════════╦══════════╣
+    ║ 实验组   ║ 准确率   ║ 翻转率   ║ 高置信翻转║ 防护效果 ║
+    ╠══════════╬══════════╬══════════╬══════════╬══════════╣
+    ║ 原始     ║ 89.53%   ║ —       ║ —       ║ —       ║
+    ║ A 无防护 ║ XX%      ║ XX%      ║ XX      ║ —       ║
+    ║ B 对抗训练║ XX%     ║ XX%      ║ XX      ║ XX% ↓   ║
+    ║ C LLM交叉║ XX%      ║ XX%      ║ XX      ║ XX% ↓   ║
+    ║ D 双重   ║ XX%      ║ XX%      ║ XX      ║ XX% ↓↓  ║
+    ╚══════════╩══════════╩══════════╩══════════╩══════════╝
+    """)
+```
+
+---
+
+#### 📋 Phase 6：CLI 入口统一（15 分钟）
+
+在 `adversarial.py` 的 `main()` 中添加完整命令行接口：
+
+```bash
+# 完整攻防评估（一条命令跑完）
+python adversarial.py \
+    --input results/val_results.csv \
+    --original rumer2026/val.csv \
+    --mode full \
+    --use-llm-defense \
+    --output-dir results/adversarial
+
+# 仅生成对抗样本
+python adversarial.py --mode generate --original rumer2026/val.csv
+
+# 仅评估（需要已有对抗样本推理结果）
+python adversarial.py --mode evaluate \
+    --input results/val_results.csv \
+    --adversarial results/adversarial_results.csv
+```
+
+---
+
+#### 📁 改动的文件清单
+
+| 文件 | 改动类型 | 说明 |
+|------|:---:|------|
+| `adversarial.py` | **重写** | 新增自动推理、LLM交叉验证、四组实验对比 |
+| `train.py` | **Bug修复** | L303: `model.bert` → `model.encoder` |
+
+---
+
+#### ✅ 验收标准
+
+- [ ] `train.py --adversarial` 模式运行不报错
+- [ ] `python adversarial.py --mode full --original rumer2026/val.csv` 一键完成攻击→推理→对比
+- [ ] 输出四组实验对比数据（至少完成 A/C 两组；B/D 若有 GPU 也完成）
+- [ ] LLM 交叉验证对翻转样本给出独立判断
+- [ ] 生成 `results/adversarial/adversarial_report.txt` 文本报告
+- [ ] 报告产出：对抗攻击成功率、防护机制效果、脆弱模式分析
+
+---
+
+#### 📝 报告产出要求
+
+为 `report.pdf` 的"对抗攻击与防护分析"章节（3-4页）提供以下数据和文字：
+
+1. **攻击方法描述**：WordNet 同义词替换，max_swaps=2，为什么选择这个方法（简单、白盒、贴合推文短文本）
+2. **攻击效果**：翻转率 X%，其中高置信度翻转 N 条（最危险），典型翻转案例 3 个
+3. **防护机制**：对抗训练原理 + LLM 交叉验证原理（附 prompt 设计思路）
+4. **四组对比表**：如上表格
+5. **结论**：哪个防护最有效？对抗训练 vs LLM 验证的权衡（成本 vs 效果）
+6. **局限性讨论**：WordNet 同义词对推文语法（hashtag, @mention, 俚语）覆盖不全，真实攻击可能更多样
+
+---
+
+#### ⏱ 预估耗时：2-3 小时
+
+| Phase | 内容 | 时间 |
+|-------|------|:---:|
+| Phase 1 | 阅读理解 | 15min |
+| Phase 2 | Bug 修复 | 10min |
+| Phase 3 | 完善 adversarial.py | 40min |
+| Phase 4 | LLM 交叉验证 | 50min |
+| Phase 5 | 四组实验 | 30min |
+| Phase 6 | CLI + 测试 | 15min |
+
+---
+
+#### 🐛 常见问题预案
+
+| 问题 | 原因 | 解决 |
+|------|------|------|
+| `generate_adversarial` 返回原文本 | 推文太短/全是俚语，没有可替换词 | 正常现象，标记为"不可扰动"，不计入翻转率分母 |
+| WordNet 下载失败 | NLTK 数据未下载 | `python -c "import nltk; nltk.download('wordnet'); nltk.download('averaged_perceptron_tagger')"` |
+| 对抗训练显存不足 | batch 太大 | 减小 `--batch_size` 到 8 或 4 |
+| LLM 交叉验证返回"不确定"过多 | prompt 温度太低或事件背景不充分 | 调高 temperature 到 0.3，补充事件背景细节 |
+| SJTU API 内容审核拦截 | Ferguson 推文含敏感词 | try/except 捕获，标记为 `[审核拦截]`，不计入统计数据 |
+| `model.bert` AttributeError | AutoModel 重构后属性名变了 | 确认使用 `model.encoder` |
+
+---
+
+### 任务二：置信度分级解释 + Event 特征升级 🟡📊 — 靳卓达
+
+> **评分关联**：置信度分级直接提升"可解释性"（15分），Event 特征升级提升"准确率"（15分）。一动两得。
+> **目标**：让系统输出"知道何时不确定"的分级解释，同时用更强的 Event 信号修复 Event 1 recall=50% 的弱项。
+
+---
+
+#### 📋 背景知识
+
+**当前状态**：
+- Event 信息已通过 `[EVENT_N]` 特殊 token 注入分类器（`preprocess.py` L60）。这是**最简形式**——把 event 当一个普通 token 塞进文本。
+- 置信度已输出但**没有分级展示**——用户看到 `confidence: 0.73` 但不知道这意味着什么。
+- `llm_explainer.py` 内部有 `_get_confidence_level()` 方法用于 LLM prompt，但**用户看不到**这个分级。
+
+**你要做的**：
+1. 将 Event 从"一个 token"升级为"一个独立的 embedding 向量"，与文本表示拼接
+2. 在推理输出、LLM 解释、评估图表中**显式展示**三级置信度
+
+---
+
+#### 📋 Phase 1：理解现有代码（15 分钟）
+
+**必读文件（按顺序）**：
+
+| 文件 | 关注点 |
+|------|--------|
+| `models/classifier.py` | `RumorClassifier.forward()` — 当前只用 [CLS] embedding 做分类 |
+| `preprocess.py` L55-70 | `RumorDataset.__getitem__()` — 当前 `[EVENT_N] text` 拼接方式 |
+| `llm_explainer.py` L57-72 | `_get_confidence_level()` — 已有分级逻辑但仅内部使用 |
+| `inference.py` L137-164 | Phase A: 分类结果如何使用 event_id |
+| `evaluate.py` L159-178 | `plot_confidence_histogram()` — 当前仅按正确/错误分组 |
+| `event_context.py` | 7 个事件的背景文本 |
+
+---
+
+#### 📋 Phase 2：Event Embedding 升级（60 分钟）⭐ 核心改动
+
+**问题**：当前 `[EVENT_N]` 只是一个特殊 token，嵌入在文本序列中。RoBERTa 的 self-attention 会让它和所有文本 token 交互——但 event 是**全局上下文**，不应该和单个词做 attention。更好的设计是：event 作为一个**独立的外部特征向量**，直接 concat 到 [CLS] 表示上。
+
+**架构变更**：
+
+```
+当前架构：
+  [EVENT_N] text → Encoder → [CLS] → classifier head → logits
+  
+新架构：
+  text → Encoder → [CLS] embedding (hidden_dim)
+  event_id → EventEmbedding Table (7 × event_emb_dim) → event_vec
+  concat([CLS], event_vec) → classifier head → logits
+```
+
+**2.1 修改 `RumorClassifier.__init__()`**
+
+在 `models/classifier.py` 中：
+
+```python
+class RumorClassifier(nn.Module):
+    def __init__(
+        self,
+        model_name: str = "bert-base-uncased",
+        num_classes: int = 2,
+        dropout: float = 0.3,
+        num_events: int = 7,           # 新增：事件数量
+        event_emb_dim: int = 32,       # 新增：事件嵌入维度
+        use_event_embedding: bool = True  # 新增：是否启用事件嵌入
+    ):
+        super().__init__()
+        self.model_name = model_name
+        self.use_event_embedding = use_event_embedding
+        
+        self.encoder = AutoModel.from_pretrained(model_name, attn_implementation='eager')
+        self.hidden_size = self.encoder.config.hidden_size
+        
+        # 新增：事件嵌入表
+        if use_event_embedding:
+            self.event_embedding = nn.Embedding(num_events, event_emb_dim)
+            self.event_emb_dim = event_emb_dim
+            # 分类器输入维度 = [CLS] hidden + event embedding
+            classifier_input_dim = self.hidden_size + event_emb_dim
+        else:
+            self.event_embedding = None
+            classifier_input_dim = self.hidden_size
+        
+        self.dropout = nn.Dropout(dropout)
+        self.classifier = nn.Sequential(
+            nn.Linear(classifier_input_dim, 256),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(256, num_classes)
+        )
+```
+
+**2.2 修改 `RumorClassifier.forward()`**
+
+```python
+def forward(self, input_ids, attention_mask, event_ids=None, output_attentions=False):
+    """
+    Args:
+        input_ids:      文本 token IDs (不含 event token)
+        attention_mask: 文本 attention mask
+        event_ids:      (batch,) 事件 ID tensor，每个样本一个整数 0-6
+        output_attentions: 是否返回 attention weights（关键词提取用）
+    """
+    outputs = self.encoder(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        output_attentions=output_attentions
+    )
+    cls_embedding = outputs.last_hidden_state[:, 0, :]  # [CLS]/<s>
+    cls_embedding = self.dropout(cls_embedding)
+    
+    # 拼接事件嵌入
+    if self.use_event_embedding and self.event_embedding is not None and event_ids is not None:
+        event_vec = self.event_embedding(event_ids)  # (batch, event_emb_dim)
+        combined = torch.cat([cls_embedding, event_vec], dim=-1)  # (batch, hidden+event_emb)
+    else:
+        combined = cls_embedding
+    
+    logits = self.classifier(combined)
+    
+    if output_attentions:
+        return logits, outputs.attentions
+    return logits
+```
+
+**2.3 修改 `RumorDataset.__getitem__()`** — 不再拼接 `[EVENT_N]` token
+
+在 `preprocess.py` 中：
+
+```python
+def __getitem__(self, idx: int) -> dict:
+    row = self.df.iloc[idx]
+    text = clean_text(str(row['text']))
+    event = int(row['event'])
+    label = int(row['label'])
+    
+    # 变更：不再拼接 [EVENT_N]，直接编码纯文本
+    # 旧: text_with_event = f"[EVENT_{event}] {text}"
+    # 新: 纯文本编码 + event 单独传
+    
+    encoding = self.tokenizer(
+        text, truncation=True, padding='max_length',
+        max_length=self.max_len, return_tensors='pt'
+    )
+    return {
+        'input_ids': encoding['input_ids'].squeeze(0),
+        'attention_mask': encoding['attention_mask'].squeeze(0),
+        'label': torch.tensor(label, dtype=torch.long),
+        'event': event,  # 保留 event ID 传给 forward()
+    }
+```
+
+**向后兼容考虑**：`create_dataloaders()` 中不再需要 `tokenizer.add_tokens(event_tokens)`。但 `load_model()` 中仍保留（旧 checkpoint 可能依赖）。新的 checkpoint 会在 `model_name` 字段旁保存 `use_event_embedding=True`。
+
+**2.4 修改 `train.py` 的训练循环**
+
+`train_epoch()` 和 `evaluate()` 中，调用 `model()` 时传入 `event_ids`：
+
+```python
+# 之前：
+logits = model(input_ids, attention_mask, output_attentions=False)
+
+# 之后：
+event_ids = batch.get('event')  # 从 DataLoader 获取
+if event_ids is not None and isinstance(event_ids, (list, torch.Tensor)):
+    if not isinstance(event_ids, torch.Tensor):
+        event_ids = torch.tensor(event_ids)
+    event_ids = event_ids.to(device)
+logits = model(input_ids, attention_mask, event_ids=event_ids, output_attentions=False)
+```
+
+**2.5 修改 `models/keyword_extractor.py`** — 适配新 forward 签名
+
+`predict()` 函数中调用 `model()` 时也需要传入 `event_id`：
+
+```python
+# 之前：
+logits, attentions = model(input_ids, attention_mask, output_attentions=True)
+
+# 之后：
+event_tensor = torch.tensor([event_id]).to(device)
+logits, attentions = model(
+    input_ids, attention_mask,
+    event_ids=event_tensor, output_attentions=True
+)
+```
+
+同时去掉 `predict()` 中的 `[EVENT_N]` 拼接逻辑。
+
+**2.6 修改 `load_model()` — 兼容旧 checkpoint**
+
+```python
+def load_model(checkpoint_path, device="cpu"):
+    checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+    model_name = checkpoint.get('model_name', 'bert-base-uncased')
+    
+    # 读取新参数（旧 checkpoint 没有这些 key → 使用默认值 → 行为不变）
+    use_event_embedding = checkpoint.get('use_event_embedding', False)
+    num_events = checkpoint.get('num_events', 7)
+    event_emb_dim = checkpoint.get('event_emb_dim', 32)
+    
+    model = RumorClassifier(
+        model_name=model_name,
+        num_classes=checkpoint.get('num_classes', 2),
+        dropout=checkpoint.get('dropout', 0.3),
+        num_events=num_events,
+        event_emb_dim=event_emb_dim,
+        use_event_embedding=use_event_embedding
+    )
+    # ... 其余不变
+```
+
+---
+
+#### 📋 Phase 3：置信度分级解释系统（30 分钟）
+
+**3.1 在 `inference.py` 中添加置信度分级标记**
+
+在 `run_inference()` 的结果字典中加入 `confidence_level` 字段：
+
+```python
+def get_confidence_level(confidence: float) -> str:
+    """返回置信度分级标签"""
+    if confidence >= 0.9:
+        return "确信"       # 系统高度自信，可直接采纳
+    elif confidence >= 0.7:
+        return "倾向"       # 系统倾向某判断，但建议注意
+    else:
+        return "存疑"       # 系统不确定，强烈建议人工复核
+```
+
+在 Phase A 的 `items` 构建中加入：
+```python
+items.append({
+    # ... 原有字段 ...
+    'confidence_level': get_confidence_level(dl_result['confidence']),
+})
+```
+
+**3.2 在 `evaluate.py` 中添加置信度分级统计**
+
+新增函数 `analyze_confidence_tiers(df)`：
+
+```python
+def analyze_confidence_tiers(df: pd.DataFrame):
+    """
+    按置信度分级统计准确率
+    
+    输出示例：
+    分级      样本数    正确数    准确率
+    确信(≥0.9)  245      230      93.9%
+    倾向(0.7-0.9) 112    85       75.9%
+    存疑(<0.7)  44       24       54.5%
+    
+    关键洞察：
+    - 确信级别的准确率应显著高于整体 → 说明置信度可信
+    - 存疑级别若准确率接近随机 → 说明 model 的自知之明有效
+    """
+    df = df.copy()
+    df['tier'] = df['confidence'].apply(lambda c: 
+        '确信(≥0.9)' if c >= 0.9 else ('倾向(0.7-0.9)' if c >= 0.7 else '存疑(<0.7)')
+    )
+    
+    for tier in ['确信(≥0.9)', '倾向(0.7-0.9)', '存疑(<0.7)']:
+        subset = df[df['tier'] == tier]
+        if len(subset) > 0:
+            acc = (subset['true_label'] == subset['pred_label']).mean()
+            print(f"  {tier:<12} {len(subset):>5} 条   准确率: {acc:.1%}")
+```
+
+**3.3 新增置信度分级图表**
+
+在 `evaluate.py` 中添加 `plot_confidence_tier_accuracy()`：
+
+```python
+def plot_confidence_tier_accuracy(df: pd.DataFrame, output_dir: str):
+    """
+    三级置信度的准确率柱状图 + 占比饼图
+    
+    左子图：三个柱（确信/倾向/存疑），每柱上标注准确率和样本数
+    右子图：饼图显示三级样本量占比
+    """
+    # 两个子图并排
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    # ... 实现
+    plt.savefig(f'{output_dir}/confidence_tiers.png', dpi=150, bbox_inches='tight')
+```
+
+**3.4 在 LLM prompt 中增强分级信息**
+
+修改 `llm_explainer.py` 的 `build_prompt()`，在"模型判断结果"部分强调分级：
+
+```python
+# 当前 prompt 已有 conf_desc，但不够醒目。增强为：
+[模型判断结果]
+判定: {label_str}
+置信度: {confidence:.0%} — {conf_desc}
+{'⚠️ 注意：置信度较低，此判断可能有误，请重点复核。' if confidence < 0.7 else ''}
+{'ℹ️ 提示：置信度中等，建议结合其他信息综合判断。' if 0.7 <= confidence < 0.9 else ''}
+{'✅ 高置信判断，可以直接采纳。' if confidence >= 0.9 else ''}
+```
+
+---
+
+#### 📋 Phase 4：重新训练 + 评估对比（45 分钟）
+
+**4.1 训练新模型（Event Embedding 版）**
+
+```bash
+# 在服务器或有 GPU 的机器上运行
+python train.py \
+    --epochs 10 \
+    --batch_size 16 \
+    --lr 1e-5 \
+    --max_len 128 \
+    --dropout 0.2 \
+    --save_dir checkpoints/event_embedding \
+    --seed 42
+```
+
+**4.2 对比评估**
+
+用旧模型（`best_model.pt`）和新模型（`checkpoints/event_embedding/best_model.pt`）分别推理，对比：
+
+| 指标 | 旧模型 ([EVENT_N] token) | 新模型 (Event Embedding) | 变化 |
+|------|:---:|:---:|:---:|
+| Overall Acc | 89.53% | ? | ? |
+| Overall F1 | 87.65% | ? | ? |
+| Event 1 Acc | 87.2% | ? | ? |
+| Event 1 Recall | **50.0%** | ? | ? |
+| Event 5 Acc | 87.6% | ? | ? |
+| Event 6 Acc | 93.3% | ? | ? |
+
+**4.3 置信度分级统计对比**
+
+| 分级 | 旧模型样本占比 | 旧模型准确率 | 新模型样本占比 | 新模型准确率 |
+|------|:---:|:---:|:---:|:---:|
+| 确信(≥0.9) | ?% | ?% | ?% | ?% |
+| 倾向(0.7-0.9) | ?% | ?% | ?% | ?% |
+| 存疑(<0.7) | ?% | ?% | ?% | ?% |
+
+---
+
+#### 📋 Phase 5：推理管道更新（20 分钟）
+
+**5.1 更新 `inference.py` 适配 event_ids**
+
+Phase A 中调用 `predict()` 时，确保传入 event_id（当前已传，检查签名是否一致）。
+
+**5.2 新增 `--output-confidence-tiers` 参数**
+
+```bash
+python inference.py --input val.csv --output results.csv --no-llm --output-confidence-tiers
+```
+
+当此标志开启时，输出 CSV 额外包含 `confidence_level` 列，并在控制台打印分级统计。
+
+**5.3 更新 `evaluate.py` 集成新图表**
+
+在 `evaluate()` 主函数中加入 Phase 3.3 的新图表调用：
+
+```python
+# 在 evaluate() 的绘图步骤中加入
+if 'confidence' in df.columns:
+    plot_confidence_tier_accuracy(df, output_dir)  # 新增
+```
+
+---
+
+#### 📁 改动的文件清单
+
+| 文件 | 改动类型 | 说明 |
+|------|:---:|------|
+| `models/classifier.py` | **重写** | 新增 EventEmbedding + 修改 forward 签名 |
+| `preprocess.py` | **修改** | 去掉 [EVENT_N] 拼接，event 单独输出 |
+| `models/keyword_extractor.py` | **修改** | 适配新 forward(event_ids=)，去掉 [EVENT_N] 拼接 |
+| `train.py` | **修改** | 训练循环传入 event_ids，适配新 RumorClassifier 参数 |
+| `inference.py` | **修改** | 加入置信度分级字段，新增 --output-confidence-tiers |
+| `evaluate.py` | **新增函数** | analyze_confidence_tiers() + plot_confidence_tier_accuracy() |
+| `llm_explainer.py` | **修改** | 增强 prompt 中的置信度分级显示 |
+
+---
+
+#### ✅ 验收标准
+
+- [ ] `RumorClassifier(use_event_embedding=True)` 可以正常前向传播
+- [ ] `python train.py` 用新架构训练不报错，val_acc ≥ 旧模型
+- [ ] Event 1 recall 从 50% 提升到 ≥ 60%（核心指标）
+- [ ] `inference.py` 输出包含 `confidence_level` 列
+- [ ] `evaluate.py` 输出三级置信度准确率统计表
+- [ ] 新图表 `confidence_tiers.png` 生成正常
+- [ ] LLM 解释中低置信度样本有明确的复核提醒
+- [ ] 旧 checkpoint（无 event_embedding）仍可加载（向后兼容）
+- [ ] 报告产出：Event 特征升级前后对比数据 + 置信度分级分析
+
+---
+
+#### 📝 报告产出要求
+
+为 `report.pdf` 提供以下内容：
+
+1. **Event Embedding 设计**：架构图（ASCII即可），解释为什么独立 embedding 优于 text token（全局上下文、不干扰 attention、维度可控）
+2. **消融对比表**：[EVENT_N] token vs Event Embedding 的各项指标
+3. **Event 1 改善分析**：Ferguson 事件 recall 提升的原因分析（event embedding 让模型学会"Ferguson争议大→更倾向谣言"的先验）
+4. **置信度分级**：三级统计表 + `confidence_tiers.png` + 讨论（确信级准确率是否显著高于整体？存疑级是否合理？）
+5. **可解释性提升**：分级解释如何帮助用户理解系统判断——不是"89%准确"一句话，而是"在它确定的时候你可以信它，在它不确定的时候你应该复核"
+
+---
+
+#### ⏱ 预估耗时：2.5-3.5 小时
+
+| Phase | 内容 | 时间 |
+|-------|------|:---:|
+| Phase 1 | 阅读理解 | 15min |
+| Phase 2 | Event Embedding 升级 | 60min |
+| Phase 3 | 置信度分级系统 | 30min |
+| Phase 4 | 重新训练+对比 | 45min |
+| Phase 5 | 管道更新+测试 | 20min |
+| 训练等待 | 取决于硬件（GPU ~10min, CPU ~2h） | — |
+
+---
+
+#### 🐛 常见问题预案
+
+| 问题 | 原因 | 解决 |
+|------|------|------|
+| `forward()` 收到 None event_ids | 旧 DataLoader 没传 event | 检查 `RumorDataset.__getitem__` 返回的 'event' 字段 |
+| 新模型 val_acc 低于旧模型 | event_emb_dim 不合适或训练不充分 | 尝试 event_emb_dim=16/64，增加 epochs |
+| 旧 checkpoint 加载报错 | 旧 checkpoint 没有 `use_event_embedding` key | `checkpoint.get('use_event_embedding', False)` 默认 False |
+| keyword_extractor 报错 | predict() 还在拼接 [EVENT_N] | 去掉拼接逻辑，改为传入 event_ids 参数 |
+| 置信度分级"确信"占比过高 | 模型过拟合，几乎所有预测 confidence > 0.9 | 调高 dropout 或减少训练 epoch |
+| Event 1 recall 没有提升 | event embedding 不是银弹，Ferguson 本身争议大 | 报告讨论"跨事件泛化的根本局限"也是好内容 |
+
+---
+
 ## 团队
 
 | 成员 | 分工 | GitHub |
 |------|------|--------|
-| 姜新晨 | 数据预处理、BERT/RoBERTa 分类器训练、关键词提取 | — |
-| 靳卓达 | LLM 提示词工程、相似案例检索、解释生成 | — |
-| 韩宇飞 | 系统集成、评估、报告、对抗攻防、服务器训练 | — |
+| 姜新晨 | 数据预处理、BERT/RoBERTa 分类器训练、关键词提取、对抗样本攻防 | — |
+| 靳卓达 | LLM 提示词工程、相似案例检索、解释生成、置信度分级+Event特征升级 | — |
+| 韩宇飞 | 系统集成、评估、报告、对抗攻防骨架、服务器训练、项目管理 | — |
 
 ---
 
