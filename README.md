@@ -2,1280 +2,261 @@
 
 **2026《人工智能导论》课程大作业**
 
----
-
-## 目录
-
-- [项目概述](#项目概述)
-- [Git 分支管理与协作规范](#git-分支管理与协作规范)
-- [数据说明](#数据说明)
-- [系统架构](#系统架构)
-- [分工与详细工作指南](#分工与详细工作指南)
-  - [姜新晨：数据预处理 + BERT 分类器](#jiang-xinchen)
-  - [靳卓达：LLM 解释生成 + 相似案例检索](#jin-zhuoda)
-  - [韩宇飞：系统集成 + 评估 + 报告](#han-yufei)
-- [环境配置](#环境配置)
-- [项目目录结构](#项目目录结构)
-- [可复现性保障](#可复现性保障)
-- [未来优化方向](#未来优化方向)
-- [开发时间线建议](#开发时间线建议)
-- [常见问题](#常见问题)
-- [参考资料](#参考资料)
-
----
-
 ## 项目概述
 
-构建一个**可解释的谣言检测系统**：输入一条推文（tweet），系统输出（1）是否为谣言，（2）判断依据的自然语言解释。
+构建**可解释谣言检测系统**：输入推文文本 + 事件ID，输出（1）谣言/非谣言分类，（2）判断依据的自然语言解释。
 
-- **任务类型**: 文本二分类 + 自然语言解释生成
-- **数据集**: 2840 条训练推文 + 401 条验证推文，7 个事件主题
-- **核心要求**: 深度学习模型做分类 + 大语言模型做可解释性分析
-
----
-
-## 数据说明
-
-| 项目 | 值 |
-|------|-----|
-| 训练集 | 2840 条推文，7 个事件 |
-| 验证集 | 401 条推文 |
-| 文本平均长度 | 16.3 词（最短 3 词） |
-| 标签 | 0 = 非谣言, 1 = 谣言 |
-| 谣言占比 | 训练集 43.7%, 验证集 43.6% |
-
-### 事件分布
-
-| Event | 训练集 | 验证集 | 谣言占比 | 说明 |
-|-------|--------|--------|----------|------|
-| 0 | 66 | 13 | ~20% | 小样本 |
-| 1 | 799 | 109 | ~25% | 大样本 |
-| 2 | 9 | 1 | ~100% | **极端小样本** |
-| 3 | 162 | 22 | ~99% | 几乎全是谣言 |
-| 4 | 327 | 46 | ~51% | 均匀分布 |
-| 5 | 854 | 121 | ~43% | 最大样本 |
-| 6 | 623 | 89 | ~53% | 大样本 |
-
-> ⚠️ Event 2（仅 9 条全谣言）和 Event 3（99% 谣言）是极端情况，需要特别关注。
+- **分类模型**: RoBERTa-large (355M), 微调, 验证集准确率 **89.53%**
+- **解释模型**: DeepSeek-V3.2 via SJTU API, 中文 200 字解释, 五要素输入
+- **检索模型**: sentence-transformers (all-MiniLM-L6-v2), 训练集语义相似度检索
 
 ---
 
-## Git 分支管理与协作规范
+## 快速开始
 
-### 分支策略
+### 环境
 
-```
-main ───────────────────────────────────────────────→
-  │
-  ├── jiang-xinchen/classifier ──→ PR → 韩宇飞 review → merge
-  ├── jin-zhuoda/explainer  ──→ PR → 韩宇飞 review → merge
-  └── han-yufei/integration──→ PR → merge
-```
-
-### 命名规则
-
-| 分支类型 | 格式 | 示例 |
-|---------|------|------|
-| 功能分支 | `member-{a/b/c}/{模块}` | `jiang-xinchen/classifier`, `jin-zhuoda/retrieval` |
-| 修复分支 | `fix/{描述}` | `fix/api-timeout`, `fix/preprocess-url` |
-| 实验分支 | `exp/{描述}` | `exp/data-augmentation`, `exp/leave-one-event` |
-
-### 工作流
-
-**1. 每人从 main 拉自己的分支**
 ```bash
-git checkout main && git pull origin main
-git checkout -b jiang-xinchen/classifier   # 姜新晨
-git checkout -b jin-zhuoda/explainer    # 靳卓达
-git checkout -b han-yufei/integration  # 韩宇飞
+pip install torch transformers sentence-transformers openai pandas numpy scikit-learn matplotlib seaborn tqdm python-dotenv nltk
 ```
 
-**2. 提交到自己的远程分支**
+### 运行（老师一键复现）
+
 ```bash
-git add <files>
-git commit -m "feat: xxx"
-git push origin jiang-xinchen/classifier
+# 1. 下载模型权重 + 检索索引（云盘链接见下方）
+#    放置到: checkpoints/best_model.pt, data/index.pkl
+
+# 2. 配置 API key（仅 LLM 模式需要）
+cp .env.example .env
+# 编辑 .env, 填入 SJTU_API_KEY
+
+# 3. 推理
+python inference.py --input rumer2026/val.csv --output results/val_results.csv --no-llm   # 仅分类 (~2min)
+python inference.py --input rumer2026/val.csv --output results/val_results_full.csv         # 含 LLM 解释 (~5min)
+
+# 4. 评估
+python evaluate.py --input results/val_results.csv --output-dir figures/
 ```
 
-**3. 发起 Pull Request → 韩宇飞 review → Merge**
+### 下载链接
 
-### Commit 规范
+| 文件 | 大小 | 说明 |
+|------|------|------|
+| `checkpoints/best_model.pt` | 1.32 GB | RoBERTa-large 模型权重 |
+| `data/index.pkl` | ~5 MB | 训练集检索索引 |
 
-```
-feat:     新功能    feat: 添加 attention 关键词提取
-fix:      修复      fix: URL 清洗正则遗漏 case
-docs:     文档      docs: 更新 API 配置说明
-refactor: 重构      refactor: 简化分类器前向传播
-test:     测试      test: 添加跨事件评估测试
-```
-
-### 注意事项
-
-- ⚠️ **永远不要在 main 分支上直接开发**
-- ⚠️ **不要 force push 到 main**
-- ⚠️ **不要提交 `.env` 和模型权重文件**（已在 `.gitignore`）
-- ⚠️ **merge 前确保代码在自己机器上跑通**
-
-> 详细协作流程、接口契约、集成 check list 见 **[DEVELOPMENT.md](DEVELOPMENT.md)**
+> 链接：[云盘地址待补充]
 
 ---
 
 ## 系统架构
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                        推文输入                                    │
-│         "Witness says police fired tear gas at protesters"        │
-└────────────────────────┬─────────────────────────────────────────┘
-                         │
-            ┌────────────┴────────────┐
-            │                         │
-            ▼                         ▼
-   ┌────────────────┐        ┌──────────────────┐
-   │  BERT 分类器    │        │  相似案例检索      │
-   │  (PyTorch)     │        │  (sentence-       │
-   │                │        │   transformers)   │
-   │ 输出:          │        │                   │
-   │ · label (0/1)  │        │ 输出:             │
-   │ · confidence   │        │ · Top-3 相似推文   │
-   │ · top-k 关键词  │        │ · 对应真实标签     │
-   └───────┬────────┘        └────────┬─────────┘
-           │                          │
-           └──────────┬───────────────┘
-                      │
-                      ▼
-          ┌───────────────────────┐
-          │   LLM 解释生成器       │
-          │   (DeepSeek-V3.2      │
-          │    通过 SJTU API)      │
-          │                       │
-          │  输入:                 │
-          │  · 原推文文本           │
-          │  · DL 预测 + 置信度     │
-          │  · 模型关注的关键词     │
-          │  · 相似案例参考         │
-          │  · 事件背景信息         │
-          │                       │
-          │  输出:                 │
-          │  · 自然语言解释文本      │
-          └───────────┬───────────┘
-                      │
-                      ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                      最终输出                                     │
-│  {                                                               │
-│    "label": 1,                                                   │
-│    "confidence": 0.87,                                           │
-│    "explanation": "该推文被判定为谣言，主要依据：1. 使用匿名信源   │
-│                    'witness says'，无法验证...",                   │
-│    "keywords": ["witness", "says", "fired"]                      │
-│  }                                                               │
-└──────────────────────────────────────────────────────────────────┘
+推文文本 + event_id
+    │
+    ├──→ [RoBERTa-large 分类器] ──→ label (0/1) + confidence + 关键词
+    │                                        │
+    ├──→ [sentence-transformers 检索] ──→ Top-3 相似训练案例
+    │                                        │
+    └──→ [DeepSeek-V3.2 LLM] ←────── 五要素 prompt ──┘
+              │
+              └──→ 中文解释 (200字)
 ```
 
 ### 技术栈
 
 | 组件 | 技术 | 运行方式 |
 |------|------|----------|
-| DL 分类器 | BERT-base-uncased (HuggingFace Transformers) | 本地训练/推理 |
-| 关键词提取 | BERT Attention Weights | 本地推理 |
-| 相似案例检索 | sentence-transformers (all-MiniLM-L6-v2) | 本地离线 |
-| LLM 解释 | DeepSeek-V3.2 via SJTU API | 远程 API 调用 |
-| 框架 | PyTorch 2.x + OpenAI SDK | — |
+| 分类器 | RoBERTa-large (HuggingFace AutoModel) | 本地 CPU/GPU |
+| 关键词提取 | Attention Weights (最后一层所有head平均) | 本地 |
+| 案例检索 | sentence-transformers all-MiniLM-L6-v2 | 本地离线 |
+| LLM 解释 | DeepSeek-V3.2 `deepseek-chat` via SJTU API | 远程 API |
+| API 端点 | `https://models.sjtu.edu.cn/api/v1` | 仅校园网/VPN |
 
-### LLM 模型选型
+### LLM 解释为何不独立判断
 
-SJTU API 提供 5 个模型，最终选择 `deepseek-chat`（DeepSeek V3.2）：
-
-| 模型 | 判断 | 理由 |
-|------|------|------|
-| **DeepSeek V3.2** `deepseek-chat` | ✅ 选用 | 685B 参数，通用文本最强，中文输出好，指令跟随稳定，32k 上下文对本任务完全够用 |
-| DeepSeek Reasoner `deepseek-reasoner` | ❌ | 深度推理模式更适合数学/逻辑题，生成解释不需要额外的"思考链"，反而更慢更费 token |
-| MiniMax-M2.7 `minimax` | ❌ | 230B 参数，偏智能体/工具调用，与我们的结构化解释生成任务不匹配 |
-| GLM-5.1 `glm` | ❌ | 754B 参数最大但侧重代码与超长文本，杀鸡用牛刀，中文解释质量不如 DeepSeek 稳定 |
-| Qwen3.5-27B `qwen` | ❌ | 仅 27B，参数最小，解释质量和一致性可能不足；强项是视觉多模态，本任务用不上 |
-
-> **结论**：`deepseek-chat` 最适合"给定结构化信息 → 输出规整中文解释"这个任务，参数够大、中文好、速度快，且天然满足 API 对 user 角色的要求。
+经过实验验证（见调试记录），LLM 作为"独立法官"尝试纠正 DL 模型会导致准确率从 89% 降至 65%。原因：LLM 没有训练集标签知识，其常识判断与数据集标注标准不一致。最终方案为 LLM 作为 **DL 判断的透明解释者**，而非二审法官。
 
 ---
 
-## 分工与详细工作指南
+## 训练历程
 
-### <a id="jiang-xinchen"></a> 👤 姜新晨：数据预处理 + BERT 分类器
+### 模型演进
 
-**职责**: 把原始数据变成能用的形式，训练并评估 DL 分类模型。
+| 阶段 | 模型 | 最佳配置 | Val Acc | Val F1 | 提升 |
+|------|------|------|:---:|:---:|:---:|
+| 基线 | BERT-base (110M) | lr=2e-5, 5ep | 82.79% | 79.88% | — |
+| V1 搜索 | BERT-base | lr=3e-5, max_len=128, 12ep | 85.04% | 82.56% | +2.25 |
+| V2 搜索 | RoBERTa-base (125M) | lr=3e-5, max_len=128, 12ep | 87.78% | 86.20% | +4.99 |
+| **⭐ V2 最佳** | **RoBERTa-large (355M)** | **lr=1e-5, max_len=128, 10ep** | **89.53%** | **87.65%** | **+6.74** |
 
-#### 1. 数据预处理
+### V2 完整实验结果（11组）
 
-**输入**: `rumer2026/train.csv`, `rumer2026/val.csv`
+服务器: 4×3090 GPU (限定 GPU 4,5,6,7), HF_ENDPOINT=https://hf-mirror.com
 
-**处理步骤**:
-- [ ] 文本清洗：去除 URL (`http://t.co/...`)、特殊字符、多余空格
-- [ ] 保留 hashtag 文本（去掉 `#` 符号保留词，如 `#Ferguson` → `Ferguson`）
-- [ ] 保留 `@` 提及（可选：保留用户名或统一替换为 `@USER`）
-- [ ] Tokenization：使用 BERT tokenizer（`bert-base-uncased`）
-- [ ] 将 event_id 编码为特殊 token（格式：`[EVENT_0]` ~ `[EVENT_6]`）
-- [ ] 构建 PyTorch Dataset 类，返回 `input_ids`, `attention_mask`, `label`
+| 排名 | 编号 | 模型 | epoch | bs | lr | max_len | dropout | val_acc | val_f1 | prec | rec | 耗时 |
+|------|------|------|:---:|:---:|------|:---:|:---:|:---:|:---:|:---:|:---:|------|
+| 1 | L5 | RoBERTa-large | 10 | 16 | 1e-5 | 128 | 0.2 | **0.8953** | **0.8765** | 0.9030 | 0.8514 | 9.8m |
+| 2 | L4 | RoBERTa-large | 10 | 16 | 3e-5 | 128 | 0.2 | 0.8878 | 0.8739 | 0.8571 | 0.8914 | 9.7m |
+| 3 | L2 | RoBERTa-large | 8 | 32 | 3e-5 | 64 | 0.3 | 0.8853 | 0.8678 | 0.8728 | 0.8629 | 4.7m |
+| 4 | L1 | RoBERTa-large | 8 | 32 | 2e-5 | 64 | 0.3 | 0.8803 | 0.8605 | 0.8757 | 0.8457 | 4.4m |
+| 5 | r4 | RoBERTa-base | 12 | 48 | 3e-5 | 128 | 0.2 | 0.8778 | 0.8620 | 0.8500 | 0.8743 | 3.5m |
+| 6 | r3 | RoBERTa-base | 10 | 48 | 2e-5 | 128 | 0.2 | 0.8728 | 0.8555 | 0.8483 | 0.8629 | 2.6m |
+| 7 | r1 | RoBERTa-base | 10 | 64 | 2e-5 | 64 | 0.3 | 0.8703 | 0.8514 | 0.8514 | 0.8514 | 1.9m |
+| 8 | L3 | RoBERTa-large | 8 | 16 | 2e-5 | 128 | 0.2 | 0.8678 | 0.8490 | 0.8466 | 0.8514 | 8.2m |
+| 9 | r2 | RoBERTa-base | 10 | 64 | 3e-5 | 64 | 0.3 | 0.8628 | 0.8493 | 0.8158 | 0.8857 | 1.6m |
+| 10 | b2 | BERT-base | 15 | 64 | 2e-5 | 128 | 0.2 | 0.8404 | 0.8161 | 0.8208 | 0.8114 | 2.8m |
+| 11 | b1 | BERT-base | 15 | 64 | 3e-5 | 128 | 0.2 | 0.8379 | 0.8094 | 0.8313 | 0.7886 | 2.2m |
 
-**输出文件**:
-```
-data/
-  processed_train.pt  或  DataLoader 直接使用
-  processed_val.pt
-```
+### 关键发现
 
-**代码模板**:
-```python
-# preprocess.py
-import pandas as pd
-import re
-import torch
-from transformers import BertTokenizer
-from torch.utils.data import Dataset, DataLoader
-
-class RumorDataset(Dataset):
-    def __init__(self, csv_path, tokenizer, max_len=64):
-        self.df = pd.read_csv(csv_path)
-        self.tokenizer = tokenizer
-        self.max_len = max_len
-    
-    def clean_text(self, text):
-        # 去除 URL
-        text = re.sub(r'http\S+', '', text)
-        # 保留 hashtag 词
-        text = re.sub(r'#(\w+)', r'\1', text)
-        # 去除多余空格
-        text = re.sub(r'\s+', ' ', text).strip()
-        return text
-    
-    def __getitem__(self, idx):
-        row = self.df.iloc[idx]
-        text = self.clean_text(row['text'])
-        event = int(row['event'])
-        # 拼接 event token
-        text = f"[EVENT_{event}] {text}"
-        encoding = self.tokenizer(
-            text, truncation=True, padding='max_length',
-            max_length=self.max_len, return_tensors='pt'
-        )
-        return {
-            'input_ids': encoding['input_ids'].squeeze(),
-            'attention_mask': encoding['attention_mask'].squeeze(),
-            'label': torch.tensor(row['label'], dtype=torch.long)
-        }
-    
-    def __len__(self):
-        return len(self.df)
-```
-
-**验收标准**:
-- `clean_text()` 处理后文本可读，无 URL 残留
-- Dataset 可正常迭代，batch size=16 不报错
-- event token 正确拼接到文本开头
+1. **模型规模是最强杠杆**: RoBERTa-large (+6.7% vs BERT) >> RoBERTa-base (+4.9%) > BERT-base
+2. **大模型用小学习率**: RoBERTa-large 最佳 lr=1e-5, BERT 最佳 lr=3e-5
+3. **max_len=128 稳定优于 64**: 推文虽短但 hashtag/@mention 可能截断关键信息
+4. **V1→V2 的 AutoModel 重构**: BERT 从原生 BertModel 切换到 AutoModel 后有 ~1% 轻微退化
 
 ---
 
-#### 2. BERT 分类器训练
+## 最终评估
 
-**模型结构**:
-```python
-import torch.nn as nn
-from transformers import BertModel
+### 整体指标 (val.csv, 401条)
 
-class RumorClassifier(nn.Module):
-    def __init__(self, num_classes=2):
-        super().__init__()
-        self.bert = BertModel.from_pretrained('bert-base-uncased')
-        self.classifier = nn.Sequential(
-            nn.Linear(768, 256),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(256, num_classes)
-        )
-    
-    def forward(self, input_ids, attention_mask, output_attentions=False):
-        outputs = self.bert(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            output_attentions=output_attentions
-        )
-        cls_embedding = outputs.last_hidden_state[:, 0, :]  # [CLS]
-        logits = self.classifier(cls_embedding)
-        
-        if output_attentions:
-            return logits, outputs.attentions  # 用于关键词提取
-        return logits
-```
+| 指标 | 值 |
+|------|:---:|
+| Accuracy | **89.53%** (359/401) |
+| Precision | 90.30% |
+| Recall | 85.14% |
+| F1 | 87.65% |
+| FP (误报) | 16 |
+| FN (漏报) | 26 |
 
-**训练配置**:
-| 参数 | 值 | 说明 |
-|------|-----|------|
-| Epochs | 5-10 | 看验证集 loss 早停 |
-| Batch size | 16 或 32 | 取决于 GPU 内存 |
-| Learning rate | 2e-5 | BERT 标准微调学习率 |
-| Optimizer | AdamW | 带权重衰减 |
-| Scheduler | Linear warmup | 前 10% steps 线性升温 |
-| Max length | 64 | 数据最长 31 词，64 足够 |
-| Loss | CrossEntropyLoss | 标准分类损失 |
-| Seed | 42 | 所有随机数固定 |
+### 各事件
 
-**训练脚本要求**:
-- `train.py` 可独立运行
-- 每 epoch 结束后在验证集上评估
-- 保存最佳模型到 `checkpoints/best_model.pt`
-- 训练日志输出到 `logs/training.log`
-- 使用 `tqdm` 显示进度条
+| Event | 样本 | Acc | Prec | Rec | F1 | 备注 |
+|-------|:---:|:---:|:---:|:---:|:---:|------|
+| 0 | 13 | 92.3% | 1.00 | 0.83 | 0.91 | Gurlitt 艺术藏品 |
+| 1 | 109 | 87.2% | 0.86 | 0.50 | 0.63 | ⚠️ Ferguson, recall 最低 |
+| 2 | 1 | 100% | 1.00 | 1.00 | 1.00 | 极小样本 |
+| 3 | 22 | 100% | 1.00 | 1.00 | 1.00 | 谣言主导 |
+| 4 | 46 | 87.0% | 0.87 | 0.87 | 0.87 | 均衡分布 |
+| 5 | 121 | 87.6% | 0.85 | 0.87 | 0.86 | 最大事件 |
+| 6 | 89 | 93.3% | 0.94 | 0.94 | 0.94 | 最佳大事件 |
 
-**输出**:
-- `checkpoints/best_model.pt` — 模型权重文件
-- `logs/training.log` — 训练日志（loss, accuracy per epoch）
+### 评估图表 (figures/)
 
-**验收标准**:
-- 验证集准确率 ≥ 75%（基线）
-- 模型文件可被 `torch.load()` 正常加载
-- 训练结束后自动输出验证集评估报告（accuracy, precision, recall, F1）
+1. `confusion_matrix.png` — 混淆矩阵
+2. `event_accuracy.png` — 各事件 Acc+F1（含整体基线）
+3. `confidence_hist.png` — 置信度分布（正确/错误）
+4. `calibration_curve.png` — 置信度校准曲线
+5. `event_f1_comparison.png` — 各事件 P/R/F1 对比
 
 ---
 
-#### 3. 关键词提取（Attention 权重）
+## 调试与优化记录
 
-**任务**: 从 BERT 最后一层的 attention weights 中提取模型最关注的词。
+### Prompt 设计迭代
 
-**方法**:
-```python
-def extract_keywords(model, tokenizer, text, event_id, top_k=5):
-    """
-    提取 BERT 模型在分类时最关注的 top_k 个词
-    
-    Returns:
-        list of (word, attention_score) tuples
-    """
-    # 拼接 event token
-    text_with_event = f"[EVENT_{event_id}] {text}"
-    inputs = tokenizer(text_with_event, return_tensors='pt')
-    
-    # 前向传播，获取 attention
-    logits, attentions = model(
-        inputs['input_ids'],
-        inputs['attention_mask'],
-        output_attentions=True
-    )
-    
-    # attentions: tuple of (batch, num_heads, seq_len, seq_len)
-    # 取最后一层，所有头平均，取 [CLS] token 对其他 token 的注意力
-    last_layer_attn = attentions[-1]  # (batch, num_heads, seq_len, seq_len)
-    cls_attn = last_layer_attn[:, :, 0, :].mean(dim=1)  # (batch, seq_len)
-    
-    # 获取每个 token 的注意力权重（排除 [CLS], [SEP], [PAD]）
-    tokens = tokenizer.convert_ids_to_tokens(inputs['input_ids'][0])
-    token_scores = []
-    for i, (token, score) in enumerate(zip(tokens, cls_attn[0])):
-        if token not in ['[CLS]', '[SEP]', '[PAD]']:
-            token_scores.append((token, score.item()))
-    
-    # 按分数排序，取 top_k
-    token_scores.sort(key=lambda x: x[1], reverse=True)
-    return token_scores[:top_k]
-```
+| 版本 | 方案 | LLM 角色 | 结果 |
+|------|------|---------|------|
+| v1 | 初始 | 被动解释者 | 可用, 但解释较生硬 |
+| v2 | 旧 prompt (回滚) | 被动解释者 | 100% 成功率, 平均 206 字 |
+| v3 | "独立法官" | 主动纠错 DL | ❌ 准确率降至 64.75%, 过度纠正 |
+| v4 | **回滚旧 prompt + 并行** | 被动解释者 | ✅ 89.53% + 解释质量好 |
 
-**输出格式**（供 靳卓达 使用）:
-```python
-# 函数返回格式
-keywords = [
-    ("witness", 0.23),
-    ("says", 0.16),
-    ("fired", 0.11),
-    ("protesters", 0.07),
-    ("police", 0.05)
-]
-```
+### API 速率优化
 
-**验收标准**:
-- 对任意输入文本，能返回 top-5 关键词及对应的 attention score
-- 关键词是可读的英文单词（非 subword token）
-- 分数归一化到 0-1 之间
+| 阶段 | 方案 | 401 条耗时 |
+|------|------|:---:|
+| 初始 | 串行, 每次新建 explainer | ~19min |
+| v2 | 复用 explainer, 串行 | ~7-10min |
+| v3 | 串行 + 0.75s 间隔 | ~19min (API 延迟主导) |
+| v4 | **3线程并行 + 0.6s 速率控制** | ~5min (未达预期, API 延迟瓶颈) |
+
+> API 响应时间 ~2-3s/request 是瓶颈，客户端并行化效果有限。`--no-llm` 模式 ~2min 全程本地。
+
+### Windows GBK 编码兼容
+
+所有 `✓`/`⚠` 等 Unicode 字符替换为 `[OK]`/`[WARN]`，避免 Windows 终端 GBK 编码报错。
+
+### SJTU API 内容审核
+
+偶发 `inappropriate content` 拦截（Ferguson 推文含警察暴力词汇），频率约 1/401。程序自动捕获写入 `[LLM 调用失败: ...]`，不中断管道。
+
+### 数据泄漏检查
+
+train.csv 2840 条 vs val.csv 401 条: id 完全不重复, 仅 1 条文本巧合相同(不同id), 无泄漏。
 
 ---
 
-#### 姜新晨 交付清单
+## 已知问题
 
-```
-models/
-  classifier.py          # RumorClassifier 模型定义
-  keyword_extractor.py   # 关键词提取函数
-train.py                 # 训练脚本（可独立运行）
-preprocess.py            # 数据预处理 + Dataset 类
-checkpoints/
-  best_model.pt          # 训练好的模型权重
-logs/
-  training.log           # 训练日志
-```
-
-**对外接口**（供 韩宇飞 集成）:
-```python
-# 推理接口
-def predict(text: str, event_id: int) -> dict:
-    """
-    Returns:
-        {
-            "label": 0 或 1,
-            "confidence": float (0-1),
-            "keywords": [("word", score), ...]
-        }
-    """
-```
+1. **LLM 推理慢**: DeepSeek API 响应 2-3s per request, 401 条需 ~5min。`--no-llm` 模式可快速验证分类器
+2. **Event 1 弱项**: Ferguson 事件 recall 仅 50%, 争议话题真假难辨, 报告可讨论
+3. **模型文件大**: 1.32GB, 云盘共享, 不提交 Git
+4. **需 HF 网络**: 首次运行需下载 RoBERTa-large (~1.4GB), 国内建议 `HF_ENDPOINT=https://hf-mirror.com`
 
 ---
 
-### <a id="jin-zhuoda"></a> 👤 靳卓达：LLM 解释生成 + 相似案例检索
-
-**职责**: 构建相似案例检索系统，设计 LLM 提示词，生成高质量的自然语言解释。
-
-#### 1. 相似案例检索
-
-**方法**: 使用 sentence-transformers 将训练集全部推文编码为向量，推理时计算余弦相似度，返回最相似的 3 条。
-
-**实现**:
-```python
-# retrieval.py
-from sentence_transformers import SentenceTransformer
-import numpy as np
-import pandas as pd
-import pickle
-
-class CaseRetriever:
-    def __init__(self, model_name='all-MiniLM-L6-v2'):
-        self.model = SentenceTransformer(model_name)
-        self.embeddings = None   # 训练集全部向量
-        self.texts = None        # 训练集全部文本
-        self.labels = None       # 训练集全部标签
-        self.events = None       # 训练集全部事件
-    
-    def build_index(self, csv_path):
-        """预处理：编码训练集全部推文"""
-        df = pd.read_csv(csv_path)
-        self.texts = df['text'].tolist()
-        self.labels = df['label'].tolist()
-        self.events = df['event'].tolist()
-        self.embeddings = self.model.encode(
-            self.texts, 
-            show_progress_bar=True,
-            batch_size=64
-        )
-        # 保存索引
-        self._save_index('data/index.pkl')
-    
-    def search(self, query_text, top_k=3):
-        """检索最相似的 top_k 条训练推文"""
-        query_vec = self.model.encode([query_text])
-        similarities = np.dot(self.embeddings, query_vec.T).squeeze()
-        top_indices = similarities.argsort()[-top_k:][::-1]
-        
-        results = []
-        for idx in top_indices:
-            results.append({
-                'text': self.texts[idx],
-                'label': self.labels[idx],
-                'event': self.events[idx],
-                'similarity': float(similarities[idx])
-            })
-        return results
-```
-
-**输出格式**（供 LLM 提示词使用）:
-```python
-similar_cases = [
-    {
-        "text": "Eyewitness claims police used excessive force",
-        "label": 1,           # 1 = 谣言
-        "event": 5,
-        "similarity": 0.89
-    },
-    {
-        "text": "Anonymous source reports police misconduct",
-        "label": 1,
-        "event": 5,
-        "similarity": 0.85
-    },
-    {
-        "text": "Official statement confirms police followed protocol",
-        "label": 0,           # 0 = 非谣言
-        "event": 5,
-        "similarity": 0.78
-    }
-]
-```
-
-**验收标准**:
-- 首次运行 `build_index()` 后生成本地索引文件，后续加载不重复编码
-- `search()` 返回结果中包含不同标签的案例（非全谣言或全非谣言）
-- 检索延迟 < 0.5 秒/条
-
----
-
-#### 2. LLM 解释生成
-
-**模型**: DeepSeek-V3.2 (`deepseek-chat`)，通过 SJTU API 调用
-
-**API 调用方式**（OpenAI 兼容格式）:
-```python
-# llm_explainer.py
-from openai import OpenAI
-import os
-
-class LLMExplainer:
-    def __init__(self):
-        self.client = OpenAI(
-            api_key=os.getenv("SJTU_API_KEY"),
-            base_url="https://models.sjtu.edu.cn/api/v1"
-        )
-        self.model = "deepseek-chat"
-```
-
-> ⚠️ **API 要求**：
-> - 仅限校园网访问（校外需通过 SJTU VPN）
-> - 请求中必须包含 `user` 角色的消息，否则不返回内容
-> - 速率限制：100 次/分钟，100000 tokens/分钟，10亿 tokens/周
-> - API key 有效期至 2026-06-30
-    
-    def build_prompt(self, text, dl_result, similar_cases, event_info):
-        """构建包含五要素的提示词"""
-        label_str = "谣言" if dl_result['label'] == 1 else "非谣言"
-        confidence = dl_result['confidence']
-        keywords = [w for w, s in dl_result['keywords']]
-        
-        # 置信度分级描述
-        if confidence > 0.9:
-            conf_desc = "高度确信"
-        elif confidence > 0.7:
-            conf_desc = "倾向于判定"
-        else:
-            conf_desc = "勉强判定，建议人工复核"
-        
-        # 相似案例格式化
-        cases_str = ""
-        for i, case in enumerate(similar_cases):
-            case_label = "谣言" if case['label'] == 1 else "非谣言"
-            cases_str += f"""
-案例{i+1}: "{case['text']}"
-  → 真实标签: {case_label} | 相似度: {case['similarity']:.2f}
-"""
-        
-        prompt = f"""你是一个谣言检测系统的解释模块。系统已经对一条社交平台推文做出了自动判断，你需要帮助用户理解判断依据。
-
-[推文内容]
-"{text}"
-
-[事件背景]
-{event_info}
-
-[模型判断结果]
-判定: {label_str}
-置信度: {confidence:.0%}
-系统对此判断{conf_desc}
-
-[模型关注的关键词（按重要性排序）]
-{', '.join(keywords)}
-
-[训练集中最相似的案例]
-{cases_str}
-
-请输出中文解释（200字以内），包含以下要点：
-1. 这条推文为什么被判定为谣言/非谣言？结合关键词和文本线索分析
-2. 判断的可信度如何？如果置信度较低，应坦诚说明不确定性
-3. 有什么需要人工复核的地方吗？
-"""
-        return prompt
-    
-    def explain(self, text, dl_result, similar_cases, event_info):
-        """生成解释"""
-        prompt = self.build_prompt(text, dl_result, similar_cases, event_info)
-        
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": "你是一个专业的谣言分析助手。请基于给定的分析信息，用中文输出清晰、有理有据的解释。"},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,      # 低温度保证解释一致性
-            max_tokens=512
-        )
-        
-        return response.choices[0].message.content
-```
-
-**提示词设计原则**:
-1. ✅ 告诉 LLM 它的角色（系统解释模块）
-2. ✅ 提供结构化输入（五要素明确分段）
-3. ✅ 约束输出格式和长度
-4. ✅ 要求基于给定信息，不瞎编
-5. ✅ 低 temperature 保证输出一致
-
-**验收标准**:
-- `.env` 文件配置 API key 后可正常调用
-- 单次解释延迟 < 5 秒
-- 解释文本 150-300 字，中文，可读性好
-- 解释内容引用了给定的关键词和案例
-
----
-
-#### 3. 事件背景数据（供 LLM 使用）
-
-为每个事件准备一段简短背景描述：
-
-```python
-# event_context.py
-EVENT_CONTEXT = {
-    0: "关于 Gurlitt 艺术藏品的归属争议，涉及纳粹掠夺艺术品归还问题",
-    1: "关于 Ferguson 事件中警察执法和 Mike Brown 枪击案的讨论",
-    2: "关于 [待补充] 的讨论",
-    3: "关于 [待补充] 的讨论",
-    4: "关于 [待补充] 的讨论",
-    5: "关于 [待补充] 的讨论",
-    6: "关于 [待补充] 的讨论",
-}
-```
-
-> ⚠️ 事件背景需要你们根据训练数据的推文内容来补充完善。
-
----
-
-#### 靳卓达 交付清单
+## 文件结构
 
 ```
-retrieval.py             # 案例检索（CaseRetriever 类 + index 构建）
-llm_explainer.py         # LLM 解释生成（LLMExplainer 类 + prompt 模板）
-event_context.py         # 事件背景信息
-data/
-  index.pkl              # 训练集向量索引（预计算，加速推理）
-.env.example             # API key 配置模板
-```
-
-**对外接口**（供 韩宇飞 集成）:
-```python
-def explain(text: str, dl_result: dict) -> str:
-    """
-    Args:
-        text: 原推文文本
-        dl_result: 姜新晨 的 predict() 返回结果
-        
-    Returns:
-        自然语言解释文本（中文）
-    """
-```
-
----
-
-### <a id="han-yufei"></a> 👤 韩宇飞：系统集成 + 评估 + 报告
-
-**职责**: 串联 姜新晨 和 靳卓达 的模块，构建端到端推理管道，全面评估系统性能，撰写报告。
-
-#### 1. 系统集成
-
-**目标**: 构建单脚本推理管道，一键运行。
-
-```python
-# inference.py — 主推理脚本
-import argparse
-import pandas as pd
-from models.classifier import RumorClassifier
-from models.keyword_extractor import extract_keywords
-from retrieval import CaseRetriever
-from llm_explainer import LLMExplainer
-from event_context import EVENT_CONTEXT
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--input', required=True, help='输入 CSV 文件路径')
-    parser.add_argument('--output', required=True, help='输出 CSV 文件路径')
-    parser.add_argument('--model', default='checkpoints/best_model.pt')
-    parser.add_argument('--no-llm', action='store_true', help='跳过 LLM 调用，仅输出分类结果')
-    args = parser.parse_args()
-    
-    # 加载模型
-    classifier = RumorClassifier()
-    classifier.load_state_dict(torch.load(args.model))
-    classifier.eval()
-    
-    retriever = CaseRetriever()
-    retriever.load_index('data/index.pkl')
-    
-    explainer = LLMExplainer()
-    
-    # 读取数据
-    df = pd.read_csv(args.input)
-    
-    results = []
-    for _, row in df.iterrows():
-        text = row['text']
-        event = int(row['event'])
-        
-        # Step 1: DL 分类
-        dl_result = predict(classifier, tokenizer, text, event)
-        
-        # Step 2: 相似案例检索
-        cases = retriever.search(text, top_k=3)
-        
-        # Step 3: LLM 解释
-        if not args.no_llm:
-            explanation = explainer.explain(
-                text, dl_result, cases, EVENT_CONTEXT.get(event, "")
-            )
-        else:
-            explanation = ""
-        
-        results.append({
-            'id': row['id'],
-            'text': text,
-            'true_label': row['label'],
-            'pred_label': dl_result['label'],
-            'confidence': dl_result['confidence'],
-            'keywords': ','.join([w for w, _ in dl_result['keywords']]),
-            'explanation': explanation
-        })
-    
-    # 保存结果
-    pd.DataFrame(results).to_csv(args.output, index=False)
-    print(f"推理完成，结果保存至 {args.output}")
-```
-
-**运行命令**:
-```bash
-# 完整推理（含 LLM）
-python inference.py --input rumer2026/val.csv --output results/val_results.csv
-
-# 仅分类（快速测试，不调 LLM）
-python inference.py --input rumer2026/val.csv --output results/val_results.csv --no-llm
-```
-
-**验收标准**:
-- `inference.py` 可一键运行，输入 CSV → 输出含预测和解释的 CSV
-- 无 GPU 时也能 CPU 运行（速度慢但不出错）
-- `--no-llm` 模式可在 30 秒内完成
-
----
-
-#### 2. 系统评估
-
-**评估指标**:
-```python
-from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score,
-    f1_score, confusion_matrix, classification_report
-)
-
-# 整体评估
-accuracy = accuracy_score(y_true, y_pred)
-precision = precision_score(y_true, y_pred)
-recall = recall_score(y_true, y_pred)
-f1 = f1_score(y_true, y_pred)
-
-# 每个事件分别评估
-for event_id in range(7):
-    mask = (y_event == event_id)
-    event_acc = accuracy_score(y_true[mask], y_pred[mask])
-    event_f1 = f1_score(y_true[mask], y_pred[mask])
-```
-
-**需要产出的图表**:
-1. 混淆矩阵（热力图）
-2. 各事件准确率柱状图（对比整体均值）
-3. 置信度分布直方图（正确预测 vs 错误预测）
-4. 置信度校准曲线（reliability diagram）
-5. 各事件 F1 对比图
-
-> 使用 `matplotlib` + `seaborn` 绘制，图表需有中文标题和轴标签。
-
----
-
-#### 3. 跨事件泛化评估（Leave-One-Event-Out）
-
-见[优化方向六](#6️⃣-跨事件泛化评估)。
-
----
-
-#### 4. 报告撰写
-
-报告按模板结构组织：
-
-1. **任务目标** — 可解释谣言检测
-2. **具体内容**
-   - (1) 实施方案 — 系统架构图 + 技术选型说明
-   - (2) 核心代码分析 — 分类器、解释器、系统集成关键代码片段
-   - (3) 检测结果分析 — 评估指标表 + 图表 + 错误案例分析
-   - (4) 判断依据分析 — 解释质量评估 + 关键词有效性 + 置信度分级效果
-3. **工作总结** — 收获心得 + 遇到的问题及解决
-4. **课程建议**
-
----
-
-#### 韩宇飞 交付清单
-
-```
-inference.py             # 端到端推理脚本
-evaluate.py              # 评估脚本（指标 + 图表）
-results/
-  val_results.csv        # 验证集推理结果
-  evaluation_report.txt  # 评估文本报告
-figures/
-  confusion_matrix.png
-  event_accuracy.png
-  confidence_hist.png
-  calibration_curve.png
-  event_f1_comparison.png
-report/
-  报告.docx 或 报告.pdf  # 最终报告
-```
-
----
-
-## 环境配置
-
-### 依赖安装
-
-```bash
-pip install -r requirements.txt
-```
-
-### requirements.txt
-
-```
-torch==2.1.0
-transformers==4.36.0
-sentence-transformers==2.2.2
-openai==1.6.0
-pandas==2.0.0
-numpy==1.24.0
-scikit-learn==1.3.0
-matplotlib==3.7.0
-seaborn==0.12.0
-tqdm==4.65.0
-python-dotenv==1.0.0
-```
-
-### API 配置
-
-复制 `.env.example` 为 `.env`，填入 SJTU API key：
-
-```
-SJTU_API_KEY=sk-xxxxxxxxxxxxxxxx
-```
-
-**获取 API key**:
-1. 登录 [my.sjtu.edu.cn](https://my.sjtu.edu.cn/)
-2. 搜索「"致远一号"AI模型API申请（测试）」→ 点击流程申请大模型API
-3. 申请通过后邮箱和交我办消息中收到 `base_url` 和 `api-key`
-
-> ⚠️ **注意事项**：
-> - API 仅限**校园网**访问（校外需通过 SJTU VPN）
-> - 请求中**必须包含 `user` 角色的消息**，否则 DeepSeek V3.2 不返回内容
-> - 速率限制：100 次/分钟，100,000 tokens/分钟，1,000,000,000 tokens/周
-> - API key 有效期至 2026-06-30
-
----
-
-## 项目目录结构
-
-```
-AI_rumor_detection/
-├── README.md                     # 本文件
-├── requirements.txt              # Python 依赖
-├── .env.example                  # API 配置模板
-├── .gitignore
+├── README.md
+├── .env.example              # API key 配置模板
+├── .gitignore                # 排除 .env, checkpoints, data, results, figures
 │
-├── rumer2026/                    # 原始数据
-│   ├── train.csv                 # 训练集 (2840条)
-│   └── val.csv                   # 验证集 (401条)
+├── rumer2026/                # 原始数据
+│   ├── train.csv             # 2840 条
+│   └── val.csv               # 401 条
 │
-├── data/                         # 预处理后的数据
-│   ├── index.pkl                 # 检索索引（靳卓达 生成）
-│   ├── processed_train.csv       # 清洗后的训练数据
-│   └── processed_val.csv         # 清洗后的验证数据
+├── models/                   # 分类器模型 (AutoModel 通用版)
+│   ├── __init__.py
+│   ├── classifier.py         # RumorClassifier + load_model()
+│   └── keyword_extractor.py  # predict() + _extract_keywords()
 │
-├── models/                       # DL 模型相关
-│   ├── classifier.py             # 模型定义（姜新晨）
-│   └── keyword_extractor.py      # 关键词提取（姜新晨）
+├── preprocess.py             # clean_text() + RumorDataset + create_dataloaders()
+├── train.py                  # 训练脚本
 │
-├── checkpoints/                  # 训练产物
-│   └── best_model.pt             # 最佳模型权重（姜新晨 产出）
+├── retrieval.py              # CaseRetriever 类
+├── llm_explainer.py          # LLMExplainer 类 + build_prompt()
+├── event_context.py          # 7个事件的背景文本
 │
-├── logs/                         # 训练日志
-│   └── training.log
+├── inference.py              # 端到端推理脚本 (主入口)
+├── evaluate.py               # 评估 + 5图表生成
+├── adversarial.py            # 对抗样本模块
 │
-├── train.py                      # 训练脚本（姜新晨）
-├── preprocess.py                 # 数据预处理（姜新晨）
+├── analyze_results.py        # 结果分析脚本
+├── analyze_llm_verdict.py    # LLM 独立判断解析
 │
-├── retrieval.py                  # 案例检索（靳卓达）
-├── llm_explainer.py              # LLM 解释（靳卓达）
-├── event_context.py              # 事件背景（靳卓达）
+├── checkpoints/              # 模型权重 (不提交Git)
+├── data/                     # 检索索引 (不提交Git)
+├── results/                  # 推理输出 (不提交Git)
+├── figures/                  # 评估图表 (不提交Git)
+├── logs/                     # 训练日志 (不提交Git)
 │
-├── inference.py                  # 端到端推理（韩宇飞）
-├── evaluate.py                   # 评估脚本（韩宇飞）
-├── adversarial.py                # 对抗样本鲁棒性分析（韩宇飞）
+├── server/                   # 服务器训练文件 (不上传GitHub)
+│   ├── train.py, train_sweep_v2.py, run.sh, requirements.txt
+│   ├── models/, rumer2026/
+│   └── checkpoints/ (sweep_v2_summary.json)
 │
-├── results/                      # 推理结果
-│   └── val_results.csv
-│
-├── figures/                      # 评估图表
-│   ├── confusion_matrix.png
-│   ├── event_accuracy.png
-│   ├── confidence_hist.png
-│   ├── calibration_curve.png
-│   └── event_f1_comparison.png
-│
-└── report/                       # 最终报告
-    └── 报告.docx
+└── tests/
+    ├── test_retrieval.py
+    └── test_llm_explainer.py
 ```
 
 ---
 
-## 可复现性保障
+## 团队
 
-| 措施 | 说明 |
-|------|------|
-| `requirements.txt` | 精确版本号，`pip install -r requirements.txt` |
-| 随机种子固定 | `seed=42`（PyTorch, NumPy, Python random） |
-| 模型权重本地化 | `checkpoints/best_model.pt`，不依赖网络下载 |
-| API key 环境变量 | `os.getenv("SJTU_API_KEY")`，不硬编码 |
-| 单脚本推理 | `python inference.py --input xxx.csv --output xxx.csv` |
-| GPU 非必需 | CPU 可运行（推理用 CPU，训练建议用 GPU 加速） |
-
-### 固定随机种子的代码
-
-```python
-import random
-import numpy as np
-import torch
-
-def set_seed(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-```
-
----
-
-## 未来优化方向
-
-> 基础版本跑通后，按优先级逐步尝试。每个优化完成后记录效果对比。
-
-### 1️⃣ 引入 Event 信息（优先级：⭐⭐⭐⭐⭐）
-
-**纳入基础版**
-
-**问题**: 不同事件的谣言比例差异巨大（Event 2 全谣言 vs Event 0 仅 20%），event 是强信号。
-
-**做法**:
-```python
-# 在文本前拼接事件 token
-text = f"[EVENT_{event_id}] {original_text}"
-# BERT 能学到 event 和谣言之间的关联
-```
-
-**预期效果**: 准确率提升 2-3%
-**工作量**: ~5 行代码
-
----
-
-### 2️⃣ 置信度分级解释（优先级：⭐⭐⭐⭐⭐）
-
-**纳入基础版**
-
-**问题**: 置信度 0.51 和 0.95 都判谣言，但用户对两者的信任程度应完全不同。
-
-**做法**:
-```python
-def confidence_level(conf):
-    if conf > 0.9:    return "高度确信"
-    elif conf > 0.7:  return "倾向于判定"
-    else:             return "建议人工复核"
-```
-
-**预期效果**: 解释更诚实，展现系统对自身局限的认知
-**工作量**: ~10 行代码
-
----
-
-### 3️⃣ 跨事件泛化评估（优先级：⭐⭐⭐⭐）
-
-**评估阶段做**
-
-**问题**: 标准随机评估过于乐观，模型可能在事件间泛化差。
-
-**做法**: Leave-One-Event-Out (LOEO)
-```python
-# 7 折，每次留 1 个 event 做测试
-for held_out_event in range(7):
-    train_data = df[df['event'] != held_out_event]
-    test_data = df[df['event'] == held_out_event]
-    # 训练 → 评估 → 记录
-```
-
-**报告产出**:
-- 7 折准确率表 + 均值
-- 各事件难度分析
-- 极端事件（Event 2）的表现分析
-
-**预期效果**: 报告中有深度的泛化分析
-**工作量**: ~50 行代码
-
----
-
-### 4️⃣ 解释质量人工自评（优先级：⭐⭐⭐⭐）
-
-**评估阶段做**
-
-**做法**: 三人对 50 条 LLM 解释进行三维度打分
-
-| 维度 | 标准 | 1分 | 3分 | 5分 |
-|------|------|-----|-----|-----|
-| 忠实性 | 解释是否与 DL 模型关注的词一致 | 完全不相关 | 部分相关 | 高度一致 |
-| 可读性 | 普通人能否理解 | 难以理解 | 基本通顺 | 清晰流畅 |
-| 信息量 | 是否有具体线索而非泛泛而谈 | 全是套话 | 有部分线索 | 具体有据 |
-
-**报告产出**:
-- 评分分布图
-- 高低分案例对比
-- 解释质量改进方向
-
-**工作量**: 2-3 小时（三人各自评分 50 条 + 汇总分析）
-
----
-
-### 5️⃣ 短文本数据增强（优先级：⭐⭐⭐）
-
-**时间充裕时做**
-
-**问题**: 平均 16.3 词，模型容易记忆关键词而非学习语义模式。
-
-**方法**:
-- **回译增强**: 英文 → 中文 → 回译英文，保持语义但换表达
-  ```python
-  # 示例
-  原文: "Police fired tear gas at protesters"
-  中译: "警方对抗议者发射催泪瓦斯"
-  回译: "Police launched tear gas at demonstrators"
-  ```
-- **同义词替换**: 用 WordNet 随机替换非核心名词/动词
-- **随机删除**: 以概率 p 随机删除非关键词
-
-**注意**: 增强后需保持标签不变，增强比例控制在 50% 以内。
-
-**预期效果**: 泛化能力提升，尤其对稀有事件
-**工作量**: ~100 行代码 + 额外训练时间
-
----
-
-### 6️⃣ 混合检索优化（优先级：⭐⭐⭐）
-
-**时间充裕时做**
-
-**问题**: 16 词推文纯语义检索效果不稳定。
-
-**改进方案**:
-- **语义 + 关键词混合打分**:
-  ```python
-  final_score = 0.7 * semantic_similarity + 0.3 * keyword_overlap
-  ```
-- **事件内聚类代表推文**: 对每个事件的推文先聚类，检索时返回各簇的代表案例
-- **确保标签多样性**: 检索结果中强制包含至少 1 条谣言和 1 条非谣言
-
-**预期效果**: 检索质量更稳定，LLM 引用时参考价值更高
-**工作量**: ~150 行代码
-
----
-
-### 7️⃣ 对抗样本攻击与防护（优先级：⭐⭐⭐⭐⭐）
-
-**负责人：韩宇飞（主责）+ 姜新晨（配合对抗训练）**
-
-**背景**: 老师明确指出——"如果在大作业中考虑对抗攻击的**防护能力**，可以有额外加分"。这个优化直接呼应老师要求，比单纯做攻击分析加分更多。
-
-**整体框架：攻击 → 防护 → 评估**:
-
-```
-┌─────────────────── 攻击阶段 ───────────────────┐
-│                                                 │
-│  原推文 ──→ [DL 分类器] ──→ 判对 ✓              │
-│      │                                          │
-│      │ 词级扰动（同义词替换）                      │
-│      ▼                                          │
-│  扰动推文 ──→ [DL 分类器] ──→ 判错 ✗ ← 攻击成功  │
-│                                                 │
-└─────────────────────────────────────────────────┘
-                      ↓
-┌─────────────────── 防护阶段 ───────────────────┐
-│                                                 │
-│  防护① 对抗训练（姜新晨）                         │
-│    训练集中混入对抗样本 → 模型见过扰动推文          │
-│                                                 │
-│  防护② LLM 交叉验证（韩宇飞）                     │
-│    DL 分类 → conf < 阈值 或 两次预测不一致        │
-│    → LLM 独立判断 → 若 LLM 与 DL 矛盾则标记复核    │
-│                                                 │
-└─────────────────────────────────────────────────┘
-                      ↓
-┌─────────────────── 评估阶段 ───────────────────┐
-│                                                 │
-│  对比 无防护 / 单一防护 / 双重防护 的攻击成功率     │
-│                                                 │
-└─────────────────────────────────────────────────┘
-```
-
----
-
-**方法一：对抗训练（姜新晨 在 train.py 中实现）**
-
-```python
-# train.py 中增加对抗训练逻辑
-def train_with_adversarial(model, train_loader, ...):
-    for batch in train_loader:
-        # 1. 正常训练
-        loss_clean = model(batch['input_ids'], ...)
-        
-        # 2. 每 N 个 batch 做一次对抗训练
-        if step % 5 == 0:
-            adv_texts = [generate_adversarial(t) for t in batch['texts']]
-            adv_inputs = tokenizer(adv_texts, ...)
-            loss_adv = model(adv_inputs, ...)
-            loss = loss_clean + 0.5 * loss_adv  # 加权混合
-        else:
-            loss = loss_clean
-        
-        loss.backward()
-```
-
-**方法二：LLM 交叉验证防御（韩宇飞 在 adversarial.py 中实现）**
-
-利用我们已有的 LLM 模块做"第二意见"——当 DL 分类器在两个版本上判断不一致时，请 LLM 独立判断：
-
-```python
-def llm_cross_verification(text, dl_label, conf, explainer):
-    """
-    LLM 交叉验证防御策略
-
-    触发条件: 置信度低于阈值 OR 对抗样本与原样本预测不一致
-    防御方式: 让 LLM 独立判断该推文是否为谣言
-    最终决定: DL 和 LLM 都判谣言 → 谣言
-             DL 和 LLM 都判非谣言 → 非谣言
-             两者矛盾 → 标记为"需人工复核"
-    """
-```
-
----
-
-**四组实验（含攻防对比）**:
-
-| 实验 | 做法 | 负责人 |
+| 成员 | 分工 | GitHub |
 |------|------|--------|
-| **攻击基线** | 对抗样本攻击未防护模型，统计 label 翻转率 | 韩宇飞 |
-| **防护①效果** | 用对抗训练后的模型重新测试攻击成功率 | 姜新晨 |
-| **防护②效果** | 对未防护模型的输出加 LLM 交叉验证，统计"矛盾样本复核率" | 韩宇飞 |
-| **双重防护** | 对抗训练模型 + LLM 交叉验证，对比总体防御效果 | 韩宇飞 |
-
-**报告产出（3-4 页）**:
-
-```
-X.X 对抗攻击与防护分析
-  X.X.1 攻击方法：词级同义词替换攻击
-  X.X.2 攻击基线：未防护模型的脆弱性
-  X.X.3 防护方案一：对抗训练的效果
-  X.X.4 防护方案二：LLM 交叉验证防御
-  X.X.5 双重防护的叠加效果
-  X.X.6 防护方案讨论与局限
-```
-
-**防御效果对比表（报告核心图表）**:
-
-| 防御方案 | 攻击成功率 | 防御提升 | 额外开销 |
-|---------|-----------|---------|---------|
-| 无防护（基线） | X% | — | — |
-| 仅对抗训练 | X% ↓ | +Y% | 训练时间 +20% |
-| 仅 LLM 交叉验证 | X% ↓ | +Y% | API 调用 +15% |
-| 双重防护 | X% ↓ | +Y% | 两者叠加 |
-
-**分工**:
-
-| 人 | 做什么 |
-|----|--------|
-| **韩宇飞** | adversarial.py 完整实现（攻击生成 + LLM 交叉验证 + 攻防评估对比 + 报告） |
-| **姜新晨** | train.py 中增加对抗训练模式（约 20 行） |
-
-**预期效果**: 老师刚强调的加分点，攻击+防护双重呼应，比其他组纯攻击分析多一层"防护方案设计"，加分更有力。
-
-**工作量**: 韩宇飞 ~200 行代码 + 报告 3-4 页；姜新晨 ~20 行代码
-
----
-
-### 优化优先级总览
-
-```
-必须做（基础版包含）:
-  1️⃣ Event 信息引入      ★★★★★
-  2️⃣ 置信度分级解释        ★★★★★
-
-评估阶段做:
-  3️⃣ 跨事件泛化评估        ★★★★
-  4️⃣ 解释质量自评          ★★★★
-
-进阶加分:
-  7️⃣ 对抗样本攻击与防护      ★★★★★ (韩宇飞+姜新晨)
-
-时间充裕再做:
-  5️⃣ 短文本数据增强        ★★★
-  6️⃣ 混合检索优化          ★★★
-```
-
----
-
-## 开发时间线建议
-
-| 阶段 | 内容 | 建议时间 |
-|------|------|----------|
-| 第1周 | 环境搭建、数据预处理（姜新晨）、检索索引构建（靳卓达）、集成框架（韩宇飞） | 并行开发 |
-| 第2周 | 分类器训练+调参（姜新晨）、提示词调试+API测试（靳卓达）、评估脚本（韩宇飞） | 并行开发 |
-| 第3周 | 模块联调、端到端测试、优化项 1️⃣ 2️⃣ | 集成测试 |
-| 第4周 | 优化项 3️⃣ 4️⃣、报告撰写（韩宇飞 主笔，姜新晨 靳卓达 补充各自部分） | 收尾 |
-| 第5周 | 优化项 7️⃣ 对抗攻防实验（韩宇飞主责、姜新晨配合对抗训练）、最终校对排版 | 加分冲刺 |
-
----
-
-## 常见问题
-
-**Q: API 调用失败怎么办？**
-A: 检查 `.env` 文件中的 `SJTU_API_KEY` 是否正确，网络是否可达 `api.claw.sjtu.edu.cn`。使用 `--no-llm` 模式可以跳过 LLM 调用测试分类器部分。
-
-**Q: GPU 内存不够？**
-A: 减小 batch_size 到 8 或 4，或使用 `--fp16` 混合精度训练。
-
-**Q: 模型准确率不达标？**
-A: 检查预处理是否正确（URL 是否去除干净），尝试调整学习率和 dropout 参数，确保 event token 正确拼接。
-
-**Q: 解释质量不好？**
-A: 调整 prompt 模板，增加更具体的约束；提高相似案例质量；降低 LLM temperature 参数。
+| 姜新晨 | 数据预处理、BERT/RoBERTa 分类器训练、关键词提取 | — |
+| 靳卓达 | LLM 提示词工程、相似案例检索、解释生成 | — |
+| 韩宇飞 | 系统集成、评估、报告、对抗攻防、服务器训练 | — |
 
 ---
 
 ## 参考资料
 
-### SJTU API 可用模型
-
-| 模型名称 | 参数 | 调用 ID | 上下文 | 适用场景 |
-|---------|------|---------|--------|---------|
-| DeepSeek V3.2 | 685B | `deepseek-chat` | 32k | **通用文本（推荐）** |
-| DeepSeek V3.2 Think | 685B | `deepseek-reasoner` | 32k | 复杂推理 |
-| MiniMax-M2.7 | 230B | `minimax` / `minimax-m2.7` | 192k | 智能体任务 |
-| GLM-5.1 | 754B | `glm` / `glm-5.1` | 128k | 代码与长程任务 |
-| Qwen3.5-27B | 27B | `qwen` / `qwen3.5-27b` | 256k | 视觉+文本理解 |
-
-**API 端点**: `https://models.sjtu.edu.cn/api/v1/chat/completions`（OpenAI 兼容格式）
-**认证方式**: `Authorization: Bearer <your-api-key>`
-
-### 外部链接
-
-- SJTU API 文档: https://claw.sjtu.edu.cn/guide/sjtu-api/
+- SJTU API: https://claw.sjtu.edu.cn/guide/sjtu-api/
 - HuggingFace Transformers: https://huggingface.co/docs/transformers
 - Sentence Transformers: https://www.sbert.net/

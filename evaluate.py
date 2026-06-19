@@ -18,8 +18,8 @@ from sklearn.metrics import (
     f1_score, confusion_matrix, classification_report
 )
 
-# 中文字体设置
-plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
+# 字体设置
+plt.rcParams['font.sans-serif'] = ['DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
 sns.set_style("whitegrid")
@@ -59,7 +59,7 @@ def compute_metrics(df: pd.DataFrame):
     return metrics
 
 
-def print_metrics(metrics: dict):
+def print_metrics(metrics: dict, df: pd.DataFrame):
     """打印评估指标表格"""
     print("\n" + "=" * 70)
     print("评估结果")
@@ -88,7 +88,7 @@ def print_metrics(metrics: dict):
     print(classification_report(
         df['true_label'].astype(int),
         df['pred_label'].astype(int),
-        target_names=['非谣言', '谣言'],
+        target_names=['Non-rumor', 'Rumor'],
         digits=4
     ))
 
@@ -98,8 +98,8 @@ def plot_confusion_matrix(df: pd.DataFrame, output_dir: str):
     cm = confusion_matrix(df['true_label'], df['pred_label'])
     plt.figure(figsize=(6, 5))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                xticklabels=['非谣言', '谣言'],
-                yticklabels=['非谣言', '谣言'],
+                xticklabels=['Non-rumor', 'Rumor'],
+                yticklabels=['Non-rumor', 'Rumor'],
                 annot_kws={'size': 20})
     plt.xlabel('预测', fontsize=13)
     plt.ylabel('真实', fontsize=13)
@@ -108,7 +108,7 @@ def plot_confusion_matrix(df: pd.DataFrame, output_dir: str):
     path = f'{output_dir}/confusion_matrix.png'
     plt.savefig(path, dpi=150, bbox_inches='tight')
     plt.close()
-    print(f"  ✓ 混淆矩阵 -> {path}")
+    print(f"  [OK] 混淆矩阵 -> {path}")
 
 
 def plot_event_accuracy(metrics: dict, output_dir: str):
@@ -153,7 +153,7 @@ def plot_event_accuracy(metrics: dict, output_dir: str):
     path = f'{output_dir}/event_accuracy.png'
     plt.savefig(path, dpi=150, bbox_inches='tight')
     plt.close()
-    print(f"  ✓ 事件准确率 -> {path}")
+    print(f"  [OK] 事件准确率 -> {path}")
 
 
 def plot_confidence_histogram(df: pd.DataFrame, output_dir: str):
@@ -175,15 +175,15 @@ def plot_confidence_histogram(df: pd.DataFrame, output_dir: str):
     path = f'{output_dir}/confidence_hist.png'
     plt.savefig(path, dpi=150, bbox_inches='tight')
     plt.close()
-    print(f"  ✓ 置信度分布 -> {path}")
+    print(f"  [OK] 置信度分布 -> {path}")
 
 
 def plot_calibration_curve(df: pd.DataFrame, output_dir: str):
     """置信度校准曲线（Reliability Diagram）"""
-    # 仅分析预测为谣言的样本
+    # 仅分析预测为Rumor的样本
     rumor_df = df[df['pred_label'] == 1].copy()
     if len(rumor_df) < 10:
-        print("  ⚠ 预测为谣言的样本太少，跳过校准曲线")
+        print("  [WARN] 预测为Rumor的样本太少，跳过校准曲线")
         return
 
     rumor_df['conf_bin'] = pd.cut(rumor_df['confidence'],
@@ -201,7 +201,7 @@ def plot_calibration_curve(df: pd.DataFrame, output_dir: str):
         s=calibration['count'] * 10, alpha=0.6, color='#4C72B0'
     )
     plt.xlabel('置信度', fontsize=12)
-    plt.ylabel('实际谣言比例', fontsize=12)
+    plt.ylabel('实际Rumor比例', fontsize=12)
     plt.title('置信度校准曲线（气泡大小 = 样本量）', fontsize=14)
     plt.xlim(0, 1)
     plt.ylim(0, 1)
@@ -210,7 +210,7 @@ def plot_calibration_curve(df: pd.DataFrame, output_dir: str):
     path = f'{output_dir}/calibration_curve.png'
     plt.savefig(path, dpi=150, bbox_inches='tight')
     plt.close()
-    print(f"  ✓ 校准曲线 -> {path}")
+    print(f"  [OK] 校准曲线 -> {path}")
 
 
 def plot_event_f1_comparison(metrics: dict, output_dir: str):
@@ -243,7 +243,7 @@ def plot_event_f1_comparison(metrics: dict, output_dir: str):
     path = f'{output_dir}/event_f1_comparison.png'
     plt.savefig(path, dpi=150, bbox_inches='tight')
     plt.close()
-    print(f"  ✓ F1 对比 -> {path}")
+    print(f"  [OK] F1 对比 -> {path}")
 
 
 def analyze_errors(df: pd.DataFrame, n: int = 20):
@@ -252,22 +252,22 @@ def analyze_errors(df: pd.DataFrame, n: int = 20):
     print(f"\n  错误分析:")
     print(f"    总错误数: {len(errors)} / {len(df)} ({len(errors)/len(df)*100:.1f}%)")
 
-    # 假阳性（误报）：预测为谣言，实际非谣言
+    # 假阳性（误报）：预测为Rumor，实际Non-rumor
     fp = errors[errors['pred_label'] == 1]
-    # 假阴性（漏报）：预测为非谣言，实际是谣言
+    # 假阴性（漏报）：预测为Non-rumor，实际是Rumor
     fn = errors[errors['pred_label'] == 0]
-    print(f"    误报 (FP): {len(fp)} — 非谣言判为谣言")
-    print(f"    漏报 (FN): {len(fn)} — 谣言判为非谣言")
+    print(f"    误报 (FP): {len(fp)} — Non-rumor判为Rumor")
+    print(f"    漏报 (FN): {len(fn)} — Rumor判为Non-rumor")
 
     # 展示典型错误
     if len(fp) > 0:
-        print(f"\n  误报示例 (预测为谣言，实际非谣言):")
+        print(f"\n  误报示例 (预测为Rumor，实际Non-rumor):")
         for _, row in fp.head(min(3, len(fp))).iterrows():
             text = str(row['text'])[:100]
             print(f"    [{row['confidence']:.2f}] {text}...")
 
     if len(fn) > 0:
-        print(f"\n  漏报示例 (预测为非谣言，实际是谣言):")
+        print(f"\n  漏报示例 (预测为Non-rumor，实际是Rumor):")
         for _, row in fn.head(min(3, len(fn))).iterrows():
             text = str(row['text'])[:100]
             print(f"    [{row['confidence']:.2f}] {text}...")
@@ -296,7 +296,7 @@ def evaluate(results_csv: str, output_dir: str = "figures"):
     # 计算指标
     print("[2/6] 计算指标...")
     metrics = compute_metrics(df)
-    print_metrics(metrics)
+    print_metrics(metrics, df)
 
     # 绘图
     print("[3/6] 绘制混淆矩阵...")
@@ -310,7 +310,7 @@ def evaluate(results_csv: str, output_dir: str = "figures"):
         plot_confidence_histogram(df, output_dir)
         plot_calibration_curve(df, output_dir)
     else:
-        print("  ⚠ 结果中无 confidence 列，跳过置信度分析")
+        print("  [WARN] 结果中无 confidence 列，跳过置信度分析")
 
     print("[6/6] 绘制 F1 对比...")
     plot_event_f1_comparison(metrics, output_dir)
@@ -325,7 +325,7 @@ def evaluate(results_csv: str, output_dir: str = "figures"):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="谣言检测系统 — 评估脚本"
+        description="Rumor检测系统 — 评估脚本"
     )
     parser.add_argument(
         '--input', required=True,

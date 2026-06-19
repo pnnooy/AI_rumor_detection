@@ -101,14 +101,14 @@ class LLMExplainer:
         event_info: str = ""
     ) -> str:
         """
-        构建包含五要素的提示词
-        
+        构建包含五要素的提示词 —— LLM 作为 DL 判断的解释者
+
         Args:
             text: 原始推文文本
             dl_result: DL 分类器结果，包含 label, confidence, keywords
             similar_cases: 相似案例列表
             event_info: 事件背景信息
-            
+
         Returns:
             str: 完整的提示词
         """
@@ -116,16 +116,11 @@ class LLMExplainer:
         confidence = dl_result.get('confidence', 0.5)
         keywords = [w for w, _ in dl_result.get('keywords', [])]
         conf_desc = self._get_confidence_level(confidence)
-        
-        # 格式化关键词
+
         keywords_str = ', '.join(keywords) if keywords else "（无显著关键词）"
-        
-        # 格式化相似案例
         cases_str = self._format_cases(similar_cases)
-        
-        # 事件背景
         event_str = event_info if event_info else "（无具体事件背景信息）"
-        
+
         prompt = f"""你是一个谣言检测系统的解释模块。系统已经对一条社交平台推文做出了自动判断，你需要帮助用户理解判断依据。
 
 [推文内容]
@@ -151,9 +146,9 @@ class LLMExplainer:
 3. 有什么需要人工复核的地方吗？
 
 请直接输出解释文本，不要包含标题或前缀。"""
-        
+
         return prompt
-    
+
     def explain(
         self,
         text: str,
@@ -163,18 +158,18 @@ class LLMExplainer:
     ) -> str:
         """
         生成解释
-        
+
         Args:
             text: 原始推文文本
-            dl_result: DL 分类器结果，包含 label, confidence, keywords
+            dl_result: DL 分类器结果
             similar_cases: 相似案例列表
             event_info: 事件背景信息
-            
+
         Returns:
             str: 自然语言解释文本（中文）
         """
         prompt = self.build_prompt(text, dl_result, similar_cases, event_info)
-        
+
         # 重试机制
         last_error = None
         for attempt in range(self.max_retries):
@@ -199,7 +194,7 @@ class LLMExplainer:
                     max_tokens=512,
                     top_p=0.9
                 )
-                
+
                 # 更新统计
                 self.total_calls += 1
                 if hasattr(response, 'usage') and response.usage:
