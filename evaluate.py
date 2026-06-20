@@ -330,6 +330,30 @@ def plot_confidence_tier_accuracy(df: pd.DataFrame, output_dir: str):
     print(f"  [OK] 置信度分级图 -> {path}")
 
 
+def _analyze_errors(df: pd.DataFrame, n: int = 20):
+    """分析分类错误样本"""
+    errors = df[df['true_label'] != df['pred_label']].copy()
+    print(f"\n  错误分析:")
+    print(f"    总错误数: {len(errors)} / {len(df)} ({len(errors)/len(df)*100:.1f}%)")
+
+    fp = errors[errors['pred_label'] == 1]
+    fn = errors[errors['pred_label'] == 0]
+    print(f"    FP (误报): {len(fp)} — Non-rumor→Rumor")
+    print(f"    FN (漏报): {len(fn)} — Rumor→Non-rumor")
+
+    if len(fp) > 0:
+        print(f"\n  误报示例:")
+        for _, row in fp.head(min(3, len(fp))).iterrows():
+            text = str(row['text'])[:120]
+            print(f"    [{row['confidence']:.2f}] {text}...")
+
+    if len(fn) > 0:
+        print(f"\n  漏报示例:")
+        for _, row in fn.head(min(3, len(fn))).iterrows():
+            text = str(row['text'])[:120]
+            print(f"    [{row['confidence']:.2f}] {text}...")
+
+
 def evaluate(results_csv: str, output_dir: str = "figures"):
     """
     完整评估管道
@@ -378,7 +402,7 @@ def evaluate(results_csv: str, output_dir: str = "figures"):
     analyze_confidence_tiers(df)
 
     # 错误分析
-    analyze_errors(df)
+    _analyze_errors(df)
 
     print(f"\n{'='*70}")
     print(f"评估完成，图表保存在 {output_dir}/")
