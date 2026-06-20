@@ -264,125 +264,67 @@ train.csv 2840 条 vs val.csv 401 条: id 完全不重复, 仅 1 条文本巧合
 
 ### 分支结构
 
-```
-main  ← 主分支（集成 + 交付）
-  ├── jiang-xinchen/classifier   ← 姜新晨：对抗样本攻防
-  ├── jin-zhuoda/explainer       ← 靳卓达：置信度分级 + Event 升级
-  └── han-yufei/integration      ← 韩宇飞：系统集成 + 报告
+当前旧分支已废弃（落后 main 太多，且无独有内容）。从最新 main 新建分支：
+
+```bash
+# 姜新晨 — 对抗样本攻防
+git checkout main && git pull origin main
+git checkout -b jiang-xinchen/adversarial
+
+# 靳卓达 — 置信度分级 + Event 升级
+git checkout main && git pull origin main
+git checkout -b jin-zhuoda/confidence-event
 ```
 
-**当前状态**：`main` 领先所有分支 9+ commits（包含 README 更新 + 系统集成 + 训练结果）。其他分支已过时，开发前必须先同步。
+```
+main  ← 主分支（集成 + 交付，只有韩宇飞可以合并）
+  ├── jiang-xinchen/adversarial  ← 姜新晨
+  └── jin-zhuoda/confidence-event ← 靳卓达
+```
 
-### 开发流程（每次开始工作前必做）
+> **谁合并到 main**：韩宇飞负责 review 并 merge PR。姜新晨、靳卓达只 push 到自己的分支。
+
+### 日常工作流
 
 ```bash
 # 1. 切到自己的分支
-git checkout jiang-xinchen/classifier   # 姜新晨
-git checkout jin-zhuoda/explainer       # 靳卓达
+git checkout jiang-xinchen/adversarial
 
-# 2. 拉取最新 main
-git fetch origin main
+# 2. 改代码、测试、随时 commit
+git add <文件>
+git commit -m "feat: 新增 LLM 交叉验证防护"
 
-# 3. 将自己的分支 rebase 到最新 main（关键！）
-git rebase origin/main
+# 3. push 到自己的远程分支
+git push origin jiang-xinchen/adversarial          # 首次
+git push origin jiang-xinchen/adversarial          # 后续
 
-# 4. 如果 rebase 有冲突，解决后：
-git add <冲突文件>
-git rebase --continue
-
-# 5. 确认在最新 main 之上
-git log --oneline -3  # 应该能看到最新的 main commits
+# 4. 完成一个阶段后，去 GitHub 发起 PR
 ```
 
-### 日常提交规范
+### 提交格式
 
 ```bash
-# 开发过程中随时提交
-git add <改动文件>
 git commit -m "<type>: <简短描述>"
 
-# type 取值：
-#   feat:     新功能
-#   fix:      Bug修复
-#   refactor: 重构（不改功能）
-#   docs:     文档
-#   test:     测试
-
-# 示例：
-git commit -m "feat: 新增 LLM 交叉验证防护函数"
-git commit -m "fix: 修复 adversarial.py 推理结果列名不匹配"
-git commit -m "docs: 补充对抗样本生成的使用说明"
+# type: feat(新功能) / fix(Bug) / refactor(重构) / docs(文档)
 ```
 
-### Push 到 GitHub
+### 发起 PR
 
-```bash
-# 首次 push（如果远程还没有你的分支）
-git push origin jiang-xinchen/classifier
-
-# 后续 push
-git push origin jiang-xinchen/classifier
-
-# ⚠️ 如果 rebase 过，需要 force push（注意：只 force 自己的分支！）
-git push origin jiang-xinchen/classifier --force
+```
+GitHub → Pull requests → New pull request
+  base: main ← compare: jiang-xinchen/adversarial
+  标题写清楚做了什么
+  通知韩宇飞 Review → 由韩宇飞合并到 main
 ```
 
-### 发起 Pull Request 合并到 main
+### ⚠️ 注意
 
-```bash
-# 1. 确认所有改动已 commit 并 push
-git status  # 应该显示 "nothing to commit, working tree clean"
-
-# 2. 在 GitHub 网页上操作：
-#    https://github.com/pnnooy/AI_rumor_detection
-#    → Pull requests → New pull request
-#    → base: main  ← compare: jiang-xinchen/classifier
-#    → 填写 PR 标题和描述（说明改了什么、怎么验证的）
-#    → 通知韩宇飞 Review
-
-# 3. Review 通过后由韩宇飞合并到 main
-```
-
-### ⚠️ 绝对禁止的操作
-
-| 操作 | 原因 |
-|------|------|
-| `git push origin main --force` | 会覆盖远程 main，破坏团队历史 |
-| 直接在 main 分支上改代码 | main 只接受 PR 合并 |
-| `git merge main` 到自己的分支 | 用 rebase 保持历史线性 |
-| 提交 `.env` / `*.pt` / `*.pkl` 等大文件 | 已在 `.gitignore` 中排除 |
-| `git add .` 不加检查 | 容易误提交大文件或敏感信息 |
-
-### 冲突解决指南
-
-最可能冲突的文件：`README.md`、`inference.py`、`train.py`
-
-```bash
-# Rebase 时遇到冲突
-git rebase origin/main
-# 提示: CONFLICT (content): Merge conflict in README.md
-
-# 1. 查看冲突文件
-git status
-
-# 2. 手动编辑冲突文件，删除 <<<<<<< / ======= / >>>>>>> 标记，保留正确内容
-
-# 3. 标记已解决
-git add README.md
-
-# 4. 继续 rebase
-git rebase --continue
-
-# 5. 如果想放弃 rebase
-git rebase --abort
-```
-
-### 提交前检查清单
-
-- [ ] `git diff --stat origin/main` 确认改动文件都在预期范围内
-- [ ] 没有意外提交 `.env`、`*.pt`、`*.pkl`、`__pycache__/`
-- [ ] `python <改动的文件> --help` 至少能打印帮助信息（语法无错）
-- [ ] commit message 符合 `<type>: <描述>` 格式
+| 做 | 别做 |
+|----|------|
+| 只 push 自己的分支 | 不要 push main |
+| commit 前检查改动文件 | 不要 `git add .` 无脑全加 |
+| 有问题问韩宇飞 | 不要提交 `.env` / `*.pt` / `*.pkl` |
 
 ---
 
