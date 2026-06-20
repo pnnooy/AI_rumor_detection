@@ -2,6 +2,21 @@
 
 **2026《人工智能导论》课程大作业**
 
+## 📑 目录
+
+- [项目概述](#项目概述)
+- [快速开始](#快速开始)
+- [系统架构](#系统架构)
+- [训练历程](#训练历程)
+- [最终评估](#最终评估)
+- [调试与优化记录](#调试与优化记录)
+- [已知问题](#已知问题)
+- [文件结构](#文件结构)
+- [Git 协作规范](#git-协作规范)
+- [优化任务分工](#优化任务分工)
+- [团队](#团队)
+- [参考资料](#参考资料)
+
 ## 项目概述
 
 构建**可解释谣言检测系统**：输入推文文本 + 事件ID，输出（1）谣言/非谣言分类，（2）判断依据的自然语言解释。
@@ -242,6 +257,132 @@ train.csv 2840 条 vs val.csv 401 条: id 完全不重复, 仅 1 条文本巧合
     ├── test_retrieval.py
     └── test_llm_explainer.py
 ```
+
+---
+
+## Git 协作规范
+
+### 分支结构
+
+```
+main  ← 主分支（集成 + 交付）
+  ├── jiang-xinchen/classifier   ← 姜新晨：对抗样本攻防
+  ├── jin-zhuoda/explainer       ← 靳卓达：置信度分级 + Event 升级
+  └── han-yufei/integration      ← 韩宇飞：系统集成 + 报告
+```
+
+**当前状态**：`main` 领先所有分支 9+ commits（包含 README 更新 + 系统集成 + 训练结果）。其他分支已过时，开发前必须先同步。
+
+### 开发流程（每次开始工作前必做）
+
+```bash
+# 1. 切到自己的分支
+git checkout jiang-xinchen/classifier   # 姜新晨
+git checkout jin-zhuoda/explainer       # 靳卓达
+
+# 2. 拉取最新 main
+git fetch origin main
+
+# 3. 将自己的分支 rebase 到最新 main（关键！）
+git rebase origin/main
+
+# 4. 如果 rebase 有冲突，解决后：
+git add <冲突文件>
+git rebase --continue
+
+# 5. 确认在最新 main 之上
+git log --oneline -3  # 应该能看到最新的 main commits
+```
+
+### 日常提交规范
+
+```bash
+# 开发过程中随时提交
+git add <改动文件>
+git commit -m "<type>: <简短描述>"
+
+# type 取值：
+#   feat:     新功能
+#   fix:      Bug修复
+#   refactor: 重构（不改功能）
+#   docs:     文档
+#   test:     测试
+
+# 示例：
+git commit -m "feat: 新增 LLM 交叉验证防护函数"
+git commit -m "fix: 修复 adversarial.py 推理结果列名不匹配"
+git commit -m "docs: 补充对抗样本生成的使用说明"
+```
+
+### Push 到 GitHub
+
+```bash
+# 首次 push（如果远程还没有你的分支）
+git push origin jiang-xinchen/classifier
+
+# 后续 push
+git push origin jiang-xinchen/classifier
+
+# ⚠️ 如果 rebase 过，需要 force push（注意：只 force 自己的分支！）
+git push origin jiang-xinchen/classifier --force
+```
+
+### 发起 Pull Request 合并到 main
+
+```bash
+# 1. 确认所有改动已 commit 并 push
+git status  # 应该显示 "nothing to commit, working tree clean"
+
+# 2. 在 GitHub 网页上操作：
+#    https://github.com/pnnooy/AI_rumor_detection
+#    → Pull requests → New pull request
+#    → base: main  ← compare: jiang-xinchen/classifier
+#    → 填写 PR 标题和描述（说明改了什么、怎么验证的）
+#    → 通知韩宇飞 Review
+
+# 3. Review 通过后由韩宇飞合并到 main
+```
+
+### ⚠️ 绝对禁止的操作
+
+| 操作 | 原因 |
+|------|------|
+| `git push origin main --force` | 会覆盖远程 main，破坏团队历史 |
+| 直接在 main 分支上改代码 | main 只接受 PR 合并 |
+| `git merge main` 到自己的分支 | 用 rebase 保持历史线性 |
+| 提交 `.env` / `*.pt` / `*.pkl` 等大文件 | 已在 `.gitignore` 中排除 |
+| `git add .` 不加检查 | 容易误提交大文件或敏感信息 |
+
+### 冲突解决指南
+
+最可能冲突的文件：`README.md`、`inference.py`、`train.py`
+
+```bash
+# Rebase 时遇到冲突
+git rebase origin/main
+# 提示: CONFLICT (content): Merge conflict in README.md
+
+# 1. 查看冲突文件
+git status
+
+# 2. 手动编辑冲突文件，删除 <<<<<<< / ======= / >>>>>>> 标记，保留正确内容
+
+# 3. 标记已解决
+git add README.md
+
+# 4. 继续 rebase
+git rebase --continue
+
+# 5. 如果想放弃 rebase
+git rebase --abort
+```
+
+### 提交前检查清单
+
+- [ ] `git diff --stat origin/main` 确认改动文件都在预期范围内
+- [ ] 没有意外提交 `.env`、`*.pt`、`*.pkl`、`__pycache__/`
+- [ ] `python <改动的文件> --help` 至少能打印帮助信息（语法无错）
+- [ ] commit message 符合 `<type>: <描述>` 格式
 
 ---
 
@@ -923,38 +1064,112 @@ def plot_confidence_tier_accuracy(df: pd.DataFrame, output_dir: str):
 
 ---
 
-#### 📋 Phase 4：重新训练 + 评估对比（45 分钟）
+#### 📋 Phase 4：在自己电脑上训练 + 评估对比（60 分钟）
 
-**4.1 训练新模型（Event Embedding 版）**
+**重要：所有训练在你自己的电脑上完成，不依赖服务器。**
+
+**4.1 为什么可以在个人电脑上训练**
+
+| 方案 | 模型 | 参数量 | CPU 预估 | 用途 |
+|------|------|:---:|------|------|
+| **快速验证** | `bert-base-uncased` | 110M | ~15min/epoch | 验证代码 pipeline 正确 |
+| **正式训练** | `roberta-base` | 125M | ~25min/epoch | 拿到可对比的正式结果 |
+
+> RoBERTa-large (355M) 在 CPU 上太慢（~2h/epoch），不适合个人电脑。用 roberta-base 做正式训练，效果对比结论同样有效——我们对比的是 **Event Embedding 架构 vs [EVENT_N] token 架构**，不是模型大小。
+
+**4.2 第一步：快速验证（5 分钟，确保代码能跑通）**
 
 ```bash
-# 在服务器或有 GPU 的机器上运行
+# 用 bert-base-uncased 跑 1 个 epoch，验证 pipeline 不报错
 python train.py \
-    --epochs 10 \
-    --batch_size 16 \
-    --lr 1e-5 \
-    --max_len 128 \
-    --dropout 0.2 \
-    --save_dir checkpoints/event_embedding \
+    --bert_model bert-base-uncased \
+    --epochs 1 \
+    --batch_size 8 \
+    --lr 2e-5 \
+    --max_len 64 \
+    --dropout 0.3 \
+    --save_dir checkpoints/smoke_test \
+    --device cpu \
     --seed 42
 ```
 
-**4.2 对比评估**
+验证点：
+- 数据加载正常（2840 条训练 + 401 条验证）
+- 训练循环不报错（特别是 `event_ids` 传入 `forward()` 正常）
+- 模型保存成功（`checkpoints/smoke_test/best_model.pt` 存在）
 
-用旧模型（`best_model.pt`）和新模型（`checkpoints/event_embedding/best_model.pt`）分别推理，对比：
+如果 1 epoch CPU 太慢，可以把训练集缩减到 200 条快速验证（临时改 `train.csv` 路径指向一个截断版本）。
 
-| 指标 | 旧模型 ([EVENT_N] token) | 新模型 (Event Embedding) | 变化 |
+**4.3 第二步：正式训练（用 roberta-base，约 2-3 小时）**
+
+```bash
+# 方案 A：CPU 训练（任何电脑都能跑，就是慢一点）
+python train.py \
+    --bert_model roberta-base \
+    --epochs 5 \
+    --batch_size 8 \
+    --lr 2e-5 \
+    --max_len 128 \
+    --dropout 0.2 \
+    --save_dir checkpoints/event_embedding \
+    --device cpu \
+    --seed 42
+
+# 方案 B：如果有 NVIDIA 显卡（检查: python -c "import torch; print(torch.cuda.is_available())"）
+python train.py \
+    --bert_model roberta-base \
+    --epochs 10 \
+    --batch_size 16 \
+    --lr 2e-5 \
+    --max_len 128 \
+    --dropout 0.2 \
+    --save_dir checkpoints/event_embedding \
+    --device cuda \
+    --seed 42
+```
+
+**如果 CPU 太慢的替代方案**：
+- 减少 epoch 到 3（够看对比趋势了）
+- 减少 `max_len` 到 64
+- 只用 CPU 跑 1-2 个 epoch 拿到初步结果，报告里标"初步实验"
+
+**4.4 对比评估**
+
+训练完成后，用**相同的 roberta-base 配置但关闭 event_embedding** 训练一个对照组（baseline for comparison）：
+
+```bash
+# 对照组：同样的 roberta-base，但不启用 event embedding
+# 做法：临时的 RumorClassifier(use_event_embedding=False) + 保留 [EVENT_N] token 拼接
+# 或者在 train.py 里加一个 --no-event-embedding 参数来切换
+```
+
+对比输出：
+
+| 指标 | 旧架构 ([EVENT_N] token) | 新架构 (Event Embedding) | 变化 |
 |------|:---:|:---:|:---:|
-| Overall Acc | 89.53% | ? | ? |
-| Overall F1 | 87.65% | ? | ? |
-| Event 1 Acc | 87.2% | ? | ? |
-| Event 1 Recall | **50.0%** | ? | ? |
-| Event 5 Acc | 87.6% | ? | ? |
-| Event 6 Acc | 93.3% | ? | ? |
+| Overall Acc | ? | ? | ? |
+| Overall F1 | ? | ? | ? |
+| **Event 1 Recall** | ? | ? | **核心指标** |
+| Event 1 Acc | ? | ? | ? |
+| 训练时间 | ? | ? | ? |
 
-**4.3 置信度分级统计对比**
+**如果 Event 1 recall 没有提升也不要紧**——这是有价值的"负面结果"，可以在报告中讨论"Event Embedding 并非银弹，跨事件泛化的根本挑战在于事件本身的争议性"，同样是好内容。
 
-| 分级 | 旧模型样本占比 | 旧模型准确率 | 新模型样本占比 | 新模型准确率 |
+**4.5 置信度分级统计对比**
+
+用训练好的新模型跑推理：
+
+```bash
+python inference.py \
+    --input rumer2026/val.csv \
+    --output results/val_event_embedding.csv \
+    --model checkpoints/event_embedding/best_model.pt \
+    --no-llm
+```
+
+然后对比新旧模型的置信度分级分布：
+
+| 分级 | 旧模型占比 | 旧模型准确率 | 新模型占比 | 新模型准确率 |
 |------|:---:|:---:|:---:|:---:|
 | 确信(≥0.9) | ?% | ?% | ?% | ?% |
 | 倾向(0.7-0.9) | ?% | ?% | ?% | ?% |
@@ -1035,9 +1250,9 @@ if 'confidence' in df.columns:
 | Phase 1 | 阅读理解 | 15min |
 | Phase 2 | Event Embedding 升级 | 60min |
 | Phase 3 | 置信度分级系统 | 30min |
-| Phase 4 | 重新训练+对比 | 45min |
+| Phase 4 | 自己电脑训练+对比 | 60min |
 | Phase 5 | 管道更新+测试 | 20min |
-| 训练等待 | 取决于硬件（GPU ~10min, CPU ~2h） | — |
+| 训练等待 | CPU 训练 roberta-base 约 2-3h（可后台跑） | — |
 
 ---
 
