@@ -68,12 +68,23 @@ def generate_explanation(
 # 韩宇飞 实现：主推理管道
 # ============================================================
 
+def get_confidence_level(confidence: float) -> str:
+    """返回置信度分级描述"""
+    if confidence >= 0.9:
+        return "确信"
+    elif confidence >= 0.7:
+        return "倾向"
+    else:
+        return "存疑"
+
+
 def run_inference(
     input_csv: str,
     output_csv: str,
     use_llm: bool = True,
     model_path: str = "checkpoints/best_model.pt",
-    index_path: str = "data/index.pkl"
+    index_path: str = "data/index.pkl",
+    output_confidence_tiers: bool = False,
 ):
     """
     端到端推理管道：串联 姜新晨 的 DL 分类 + 靳卓达 的检索和 LLM 解释
@@ -155,6 +166,7 @@ def run_inference(
             'true_label': row['label'],
             'pred_label': dl_result['label'],
             'confidence': dl_result['confidence'],
+            'confidence_level': get_confidence_level(dl_result['confidence']),
             'keywords': ','.join([w for w, _ in dl_result['keywords']]),
             'dl_result': dl_result,
             'cases': cases,
@@ -199,7 +211,7 @@ def run_inference(
                 remaining = avg_per * (n_total - completed[0])
                 eta = f"{remaining/60:.1f}min" if remaining > 60 else f"{remaining:.0f}s"
                 i = item['idx']
-                print(f"[{completed}/{n_total} eta={eta}] pred={item['pred_label']} conf={item['confidence']:.4f} true={item['true_label']} | {item['text'][:60]}")
+                print(f"[{completed}/{n_total} eta={eta}] pred={item['pred_label']} conf={item['confidence']:.4f} [{item['confidence_level']}] true={item['true_label']} | {item['text'][:60]}")
                 if explanation:
                     print(f"        LLM: {explanation}")
                 print("-" * 60)
@@ -216,7 +228,7 @@ def run_inference(
             remaining = avg_per * (len(items) - item['idx'] - 1)
             eta = f"{remaining/60:.1f}min" if remaining > 60 else f"{remaining:.0f}s"
             i = item['idx']
-            print(f"[{i+1}/{total} eta={eta}] pred={item['pred_label']} conf={item['confidence']:.4f} true={item['true_label']} | {item['text'][:60]}")
+            print(f"[{i+1}/{total} eta={eta}] pred={item['pred_label']} conf={item['confidence']:.4f} [{item['confidence_level']}] true={item['true_label']} | {item['text'][:60]}")
             print("-" * 60)
 
     # 还原为 results 列表
@@ -224,20 +236,44 @@ def run_inference(
     results = [{
         'id': it['id'], 'text': it['text'], 'event': it['event'],
         'true_label': it['true_label'], 'pred_label': it['pred_label'],
-        'confidence': it['confidence'], 'keywords': it['keywords'],
+        'confidence': it['confidence'],
+        'confidence_level': it['confidence_level'],
+        'keywords': it['keywords'],
         'explanation': it['explanation'],
     } for it in items]
 
     # 5. 保存结果
     pd.DataFrame(results).to_csv(output_csv, index=False, encoding='utf-8-sig')
 
-    # 统计
+    # 6. 统计
     total_time = time.time() - start_time
     correct = sum(1 for r in results if r['true_label'] == r['pred_label'])
     acc = correct / len(results) * 100
     print(f"\n[OK] 完成! 总耗时: {total_time/60:.1f} min")
     print(f"  准确率: {correct}/{len(results)} = {acc:.1f}%")
     print(f"  结果已保存至: {output_csv}")
+
+    # ---------- Phase C: 置信度分级统计 ----------
+    if output_confidence_tiers:
+        print("\n  === 置信度分级统计 ===")
+        tiers = {
+            '确信(≥0.9)': {'count': 0, 'correct': 0},
+            '倾向(0.7-0.9)': {'count': 0, 'correct': 0},
+            '存疑(<0.7)': {'count': 0, 'correct': 0},
+        }
+        for r in results:
+            c = r['confidence']
+            key = '确信(≥0.9)' if c >= 0.9 else ('倾向(0.7-0.9)' if c >= 0.7 else '存疑(<0.7)')
+            tiers[key]['count'] += 1
+            if r['true_label'] == r['pred_label']:
+                tiers[key]['correct'] += 1
+        print(f"  {'分级':<18} {'样本':>8} {'准确率':>10}")
+        print(f"  {'-' * 45}")
+        for key, info in tiers.items():
+            acc_t = info['correct'] / info['count'] if info['count'] > 0 else 0.0
+            pct = info['count'] / len(results) * 100
+            print(f"  {key:<18} {info['count']:>4} ({pct:>5.1f}%)  {acc_t:>8.1%}")
+        print("  === 置信度分级结束 ===")
 
 
 def main():
@@ -264,6 +300,10 @@ def main():
         '--index', default='data/index.pkl',
         help='检索索引路径 (默认: data/index.pkl)'
     )
+    parser.add_argument(
+        '--output-confidence-tiers', action='store_true',
+        help='输出置信度分级统计（确信/倾向/存疑）及各分级准确率'
+    )
     args = parser.parse_args()
     sys.stdout.flush()
 
@@ -272,7 +312,8 @@ def main():
         output_csv=args.output,
         use_llm=not args.no_llm,
         model_path=args.model,
-        index_path=args.index
+        index_path=args.index,
+        output_confidence_tiers=args.output_confidence_tiers,
     )
 
 

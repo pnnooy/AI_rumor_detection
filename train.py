@@ -122,9 +122,16 @@ def train_epoch(
         attention_mask = batch['attention_mask'].to(device)
         labels = batch['label'].to(device)
 
+        # 从 batch 取出 event_ids（兼容 Event Embedding 架构）
+        event_ids = batch.get('event')
+        if event_ids is not None:
+            if not isinstance(event_ids, torch.Tensor):
+                event_ids = torch.tensor(event_ids)
+            event_ids = event_ids.to(device)
+
         # === 标准训练 ===
         optimizer.zero_grad()
-        logits = model(input_ids, attention_mask, output_attentions=False)
+        logits = model(input_ids, attention_mask, event_ids=event_ids, output_attentions=False)
         loss_clean = criterion(logits, labels)
 
         # === 对抗训练 ===
@@ -134,30 +141,39 @@ def train_epoch(
                 from adversarial import generate_adversarial
 
                 # 生成对抗样本（需要原文本）
-                # 从 batch 中还原文本
+                # 从 batch 中还原文本 + 原始 event_id
+                event_id_list = batch.get('event', [0] * input_ids.size(0))
                 adv_texts = []
+                decoded_texts = []
                 for i in range(input_ids.size(0)):
-                    # 尝试从 input_ids 还原原始事件 ID
-                    event_id = batch.get('event', [0] * input_ids.size(0))
-                    eid = event_id[i] if isinstance(event_id, (list, torch.Tensor)) else 0
-                    if isinstance(eid, torch.Tensor):
-                        eid = eid.item()
-
-                    # 用解码+扰动的方式生成对抗文本
+                    # 解码还原文本
                     ids = input_ids[i].cpu().tolist()
-                    # 去掉 event token 再解码
                     decoded = tokenizer_global.decode(ids, skip_special_tokens=True)
+                    decoded_texts.append(decoded)
                     adv_text = generate_adversarial(decoded, max_swaps=2)
-                    adv_texts.append(f"[EVENT_{eid}] {adv_text}")
+                    eid = event_id_list[i] if isinstance(event_id_list, (list, tuple)) else event_id_list[i].item()
+                    # 对抗样本采用与训练一致的编码策略：
+                    # - Event Embedding 模式：纯文本
+                    # - [EVENT_N] 拼接模式：带 [EVENT_N] 前缀
+                    if getattr(model, 'use_event_embedding', False):
+                        adv_texts.append(adv_text)
+                    else:
+                        adv_texts.append(f"[EVENT_{eid}] {adv_text}")
 
                 adv_inputs = tokenizer_global(
                     adv_texts, padding='max_length', truncation=True,
-                    max_length=64, return_tensors='pt'
+                    max_length=input_ids.size(1), return_tensors='pt'
                 )
+                adv_input_ids = adv_inputs['input_ids'].to(device)
+                adv_attention_mask = adv_inputs['attention_mask'].to(device)
+
+                adv_event_ids = None
+                if event_ids is not None and getattr(model, 'use_event_embedding', False):
+                    adv_event_ids = event_ids
+
                 adv_logits = model(
-                    adv_inputs['input_ids'].to(device),
-                    adv_inputs['attention_mask'].to(device),
-                    output_attentions=False
+                    adv_input_ids, adv_attention_mask,
+                    event_ids=adv_event_ids, output_attentions=False
                 )
                 loss_adv = criterion(adv_logits, labels)
                 loss = loss_clean + adv_weight * loss_adv
@@ -215,7 +231,13 @@ def evaluate(
         attention_mask = batch['attention_mask'].to(device)
         labels = batch['label'].to(device)
 
-        logits = model(input_ids, attention_mask, output_attentions=False)
+        event_ids = batch.get('event')
+        if event_ids is not None:
+            if not isinstance(event_ids, torch.Tensor):
+                event_ids = torch.tensor(event_ids)
+            event_ids = event_ids.to(device)
+
+        logits = model(input_ids, attention_mask, event_ids=event_ids, output_attentions=False)
         loss = criterion(logits, labels)
 
         total_loss += loss.item()
@@ -276,10 +298,15 @@ def run_training(args):
         logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
 
     # --- 超参数 ---
+    use_event_embedding = not args.no_event_embedding
+    num_events = 7
+    event_emb_dim = args.event_emb_dim
     logger.info(f"\n超参数:")
     for key in ['epochs', 'batch_size', 'lr', 'max_len', 'dropout',
                 'warmup_ratio', 'weight_decay', 'seed', 'adversarial']:
         logger.info(f"  {key}: {getattr(args, key)}")
+    logger.info(f"  use_event_embedding: {use_event_embedding}")
+    logger.info(f"  event_emb_dim: {event_emb_dim}")
 
     # --- 数据 ---
     logger.info(f"\n加载数据...")
@@ -289,7 +316,8 @@ def run_training(args):
         tokenizer_name=args.bert_model,
         max_len=args.max_len,
         batch_size=args.batch_size,
-        seed=args.seed
+        seed=args.seed,
+        use_event_embedding=use_event_embedding,
     )
 
     # 保存 tokenizer 引用供对抗训练使用
@@ -298,9 +326,17 @@ def run_training(args):
 
     # --- 模型 ---
     logger.info(f"\n创建模型...")
-    model = RumorClassifier(num_classes=2, dropout=args.dropout)
-    # 扩展 embedding 以容纳 event tokens
-    model.bert.resize_token_embeddings(len(tokenizer))
+    model = RumorClassifier(
+        model_name=args.bert_model,
+        num_classes=2,
+        dropout=args.dropout,
+        num_events=num_events,
+        event_emb_dim=event_emb_dim,
+        use_event_embedding=use_event_embedding,
+    )
+    # 扩展 embedding 以容纳 event tokens（无论是否启用 Event Embedding，
+    # 为保持与旧 checkpoint 兼容性，均进行 resize）
+    model.encoder.resize_token_embeddings(len(tokenizer))
     model.to(device)
 
     total_params = sum(p.numel() for p in model.parameters())
@@ -382,9 +418,13 @@ def run_training(args):
                 'val_accuracy': val_metrics['accuracy'],
                 'val_f1': val_metrics['f1'],
                 'val_loss': val_metrics['loss'],
+                'model_name': args.bert_model,
                 'num_classes': 2,
                 'dropout': args.dropout,
                 'max_len': args.max_len,
+                'use_event_embedding': use_event_embedding,
+                'num_events': num_events,
+                'event_emb_dim': event_emb_dim,
                 'history': history,
                 'timestamp': datetime.now().isoformat(),
             }, checkpoint_path)
@@ -488,6 +528,12 @@ def parse_args():
                         help='开启对抗训练模式（优化 7️⃣）')
     parser.add_argument('--adv_weight', type=float, default=0.5,
                         help='对抗损失权重')
+
+    # Event Embedding（任务二）
+    parser.add_argument('--no-event-embedding', action='store_true',
+                        help='关闭 Event Embedding，退回到 [EVENT_N] token 拼接模式')
+    parser.add_argument('--event-emb-dim', type=int, default=32,
+                        help='Event Embedding 的维度（默认 32）')
 
     return parser.parse_args()
 

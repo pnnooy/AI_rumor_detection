@@ -94,11 +94,11 @@ class LLMExplainer:
         return "\n".join(lines)
     
     def build_prompt(
-        self,
-        text: str,
-        dl_result: Dict,
-        similar_cases: List[Dict],
-        event_info: str = ""
+            self,
+            text: str,
+            dl_result: Dict,
+            similar_cases: List[Dict],
+            event_info: str = ""
     ) -> str:
         """
         构建包含五要素的提示词 —— LLM 作为 DL 判断的解释者
@@ -121,6 +121,17 @@ class LLMExplainer:
         cases_str = self._format_cases(similar_cases)
         event_str = event_info if event_info else "（无具体事件背景信息）"
 
+        # 根据置信度给出不同等级的提示
+        if confidence >= 0.9:
+            tier_hint = "✅ 高置信判断，可以直接采纳。"
+            tier_advice = "系统高度确信此判断，可视为明确信号。"
+        elif confidence >= 0.7:
+            tier_hint = "⚠️ 中等置信判断，建议结合其他信息综合判断。"
+            tier_advice = "系统倾向此判断，但仍可能存在误判可能。"
+        else:
+            tier_hint = "❌ 低置信判断，强烈建议人工复核。"
+            tier_advice = "系统对该判断不确定，应作为人工复核的优先样本。"
+
         prompt = f"""你是一个谣言检测系统的解释模块。系统已经对一条社交平台推文做出了自动判断，你需要帮助用户理解判断依据。
 
 [推文内容]
@@ -133,6 +144,8 @@ class LLMExplainer:
 判定: {label_str}
 置信度: {confidence:.0%}
 系统对此判断{conf_desc}
+{ tier_hint }
+{ tier_advice }
 
 [模型关注的关键词（按重要性排序）]
 {keywords_str}

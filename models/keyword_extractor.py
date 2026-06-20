@@ -34,15 +34,18 @@ def _extract_keywords(model, tokenizer, text: str, event_id: int, top_k: int = 5
     from preprocess import clean_text
 
     cleaned = clean_text(text)
-    text_with_event = f"[EVENT_{event_id}] {cleaned}"
-
-    inputs = tokenizer(text_with_event, return_tensors='pt', truncation=True, max_length=128)
+    # 新架构：纯文本编码，event 通过 event_ids 参数传入（供模型内部使用）
+    # 但 attention weights 只来源于 encoder，我们对文本 token 计算 attention 即可
+    inputs = tokenizer(cleaned, return_tensors='pt', truncation=True, max_length=128)
     if _device != "cpu":
         inputs = {k: v.to(_device) for k, v in inputs.items()}
 
+    event_tensor = torch.tensor([event_id]).to(_device)
+
     with torch.no_grad():
         _, attentions = model(
-            inputs['input_ids'], inputs['attention_mask'], output_attentions=True
+            inputs['input_ids'], inputs['attention_mask'],
+            event_ids=event_tensor, output_attentions=True
         )
 
     last_layer_attn = attentions[-1]
@@ -54,11 +57,10 @@ def _extract_keywords(model, tokenizer, text: str, event_id: int, top_k: int = 5
 
     # 兼容 BERT 和 RoBERTa 的特殊 token
     SPECIAL_TOKENS = {'[CLS]', '[SEP]', '[PAD]', '[UNK]', '<s>', '</s>', '<pad>'}
-    EVENT_PREFIX = '[EVENT_'
 
     token_scores = []
     for i, (token, score) in enumerate(zip(tokens, cls_attn[0].cpu())):
-        if token in SPECIAL_TOKENS or token.startswith(EVENT_PREFIX):
+        if token in SPECIAL_TOKENS:
             continue
         token_scores.append((token, score.item()))
 
@@ -104,14 +106,18 @@ def predict(text: str, event_id: int) -> dict:
     from preprocess import clean_text
 
     cleaned = clean_text(text)
-    text_with_event = f"[EVENT_{event_id}] {cleaned}"
-
-    inputs = _tokenizer(text_with_event, return_tensors='pt', truncation=True, max_length=128)
+    # 新架构：纯文本编码，event_id 独立传入
+    inputs = _tokenizer(cleaned, return_tensors='pt', truncation=True, max_length=128)
     if _device != "cpu":
         inputs = {k: v.to(_device) for k, v in inputs.items()}
 
+    event_tensor = torch.tensor([event_id]).to(_device)
+
     with torch.no_grad():
-        logits = _model(inputs['input_ids'], inputs['attention_mask'], output_attentions=False)
+        logits = _model(
+            inputs['input_ids'], inputs['attention_mask'],
+            event_ids=event_tensor, output_attentions=False
+        )
 
     probs = F.softmax(logits, dim=-1)
     pred_label = int(torch.argmax(probs, dim=-1).item())
