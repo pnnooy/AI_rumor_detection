@@ -300,7 +300,7 @@ def run_training(args):
     logger.info(f"\n创建模型...")
     model = RumorClassifier(num_classes=2, dropout=args.dropout)
     # 扩展 embedding 以容纳 event tokens
-    model.bert.resize_token_embeddings(len(tokenizer))
+    model.encoder.resize_token_embeddings(len(tokenizer))
     model.to(device)
 
     total_params = sum(p.numel() for p in model.parameters())
