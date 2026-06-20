@@ -287,6 +287,9 @@ main  ← 主分支（集成 + 交付，只有韩宇飞可以合并）
 ### 日常工作流
 
 ```bash
+# 0. 拉取最新 main（每次开始工作前）
+git checkout main && git pull origin main
+
 # 1. 切到自己的分支
 git checkout jiang-xinchen/adversarial
 
