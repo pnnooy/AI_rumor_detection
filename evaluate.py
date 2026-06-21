@@ -62,12 +62,12 @@ def compute_metrics(df: pd.DataFrame):
 def print_metrics(metrics: dict, df: pd.DataFrame):
     """打印评估指标表格"""
     print("\n" + "=" * 70)
-    print("评估结果")
+    print("Evaluation Results")
     print("=" * 70)
 
     # 整体
     m = metrics['overall']
-    print(f"\n  整体:")
+    print(f"\n  Overall:")
     print(f"    Accuracy:  {m['accuracy']:.4f}")
     print(f"    Precision: {m['precision']:.4f}")
     print(f"    Recall:    {m['recall']:.4f}")
@@ -76,7 +76,7 @@ def print_metrics(metrics: dict, df: pd.DataFrame):
     # 各事件
     event_keys = [k for k in metrics if k.startswith('event_')]
     if event_keys:
-        print(f"\n  {'Event':<10} {'样本':>6} {'Acc':>8} {'Prec':>8} {'Rec':>8} {'F1':>8}")
+        print(f"\n  {'Event':<10} {'Samples':>6} {'Acc':>8} {'Prec':>8} {'Rec':>8} {'F1':>8}")
         print(f"  {'-'*48}")
         for key in event_keys:
             m = metrics[key]
@@ -84,7 +84,7 @@ def print_metrics(metrics: dict, df: pd.DataFrame):
             print(f"  Event {event_id:<5} {m['n_samples']:>6} {m['accuracy']:>8.4f} "
                   f"{m['precision']:>8.4f} {m['recall']:>8.4f} {m['f1']:>8.4f}")
 
-    print(f"\n  分类报告:\n")
+    print(f"\n  Classification Report:\n")
     print(classification_report(
         df['true_label'].astype(int),
         df['pred_label'].astype(int),
@@ -101,9 +101,9 @@ def plot_confusion_matrix(df: pd.DataFrame, output_dir: str):
                 xticklabels=['Non-rumor', 'Rumor'],
                 yticklabels=['Non-rumor', 'Rumor'],
                 annot_kws={'size': 20})
-    plt.xlabel('预测', fontsize=13)
-    plt.ylabel('真实', fontsize=13)
-    plt.title('混淆矩阵', fontsize=15)
+    plt.xlabel('Predicted', fontsize=13)
+    plt.ylabel('Actual', fontsize=13)
+    plt.title('Confusion Matrix', fontsize=15)
     plt.tight_layout()
     path = f'{output_dir}/confusion_matrix.png'
     plt.savefig(path, dpi=150, bbox_inches='tight')
@@ -130,10 +130,10 @@ def plot_event_accuracy(metrics: dict, output_dir: str):
     bars2 = ax.bar(x + width/2, f1s, width, label='F1', color='#DD8452')
 
     ax.axhline(y=overall_acc, color='#4C72B0', linestyle='--', alpha=0.5,
-               label=f'整体 Acc: {overall_acc:.3f}')
-    ax.set_xlabel('事件', fontsize=12)
-    ax.set_ylabel('分数', fontsize=12)
-    ax.set_title('各事件准确率与 F1', fontsize=14)
+               label=f'Overall Acc: {overall_acc:.3f}')
+    ax.set_xlabel('Event', fontsize=12)
+    ax.set_ylabel('Score', fontsize=12)
+    ax.set_title('Accuracy & F1 by Event', fontsize=14)
     ax.set_xticks(x)
     ax.set_xticklabels([f'Event {e}' for e in events])
     ax.legend(fontsize=10)
@@ -160,16 +160,16 @@ def plot_confidence_histogram(df: pd.DataFrame, output_dir: str):
     """置信度分布直方图（正确 vs 错误）"""
     df = df.copy()
     df['correct'] = (df['true_label'] == df['pred_label']).map(
-        {True: '正确', False: '错误'})
+        {True: 'Correct', False: 'Wrong'})
 
     plt.figure(figsize=(8, 5))
-    for label, color in [('正确', '#4C72B0'), ('错误', '#DD8452')]:
+    for label, color in [('Correct', '#4C72B0'), ('Wrong', '#DD8452')]:
         subset = df[df['correct'] == label]['confidence']
         plt.hist(subset, bins=20, alpha=0.6, label=label, color=color)
 
-    plt.xlabel('置信度', fontsize=12)
-    plt.ylabel('数量', fontsize=12)
-    plt.title('置信度分布：正确预测 vs 错误预测', fontsize=14)
+    plt.xlabel('Confidence', fontsize=12)
+    plt.ylabel('Count', fontsize=12)
+    plt.title('Confidence Distribution: Correct vs Wrong', fontsize=14)
     plt.legend()
     plt.tight_layout()
     path = f'{output_dir}/confidence_hist.png'
@@ -195,14 +195,14 @@ def plot_calibration_curve(df: pd.DataFrame, output_dir: str):
     ).dropna()
 
     plt.figure(figsize=(7, 7))
-    plt.plot([0, 1], [0, 1], 'k--', alpha=0.3, label='完美校准')
+    plt.plot([0, 1], [0, 1], 'k--', alpha=0.3, label='Perfect calibration')
     plt.scatter(
         calibration.index.astype(float), calibration['accuracy'],
         s=calibration['count'] * 10, alpha=0.6, color='#4C72B0'
     )
-    plt.xlabel('置信度', fontsize=12)
-    plt.ylabel('实际Rumor比例', fontsize=12)
-    plt.title('置信度校准曲线（气泡大小 = 样本量）', fontsize=14)
+    plt.xlabel('Confidence', fontsize=12)
+    plt.ylabel('Actual Rumor Ratio', fontsize=12)
+    plt.title('Calibration Curve (bubble size = sample count)', fontsize=14)
     plt.xlim(0, 1)
     plt.ylim(0, 1)
     plt.legend()
@@ -232,9 +232,9 @@ def plot_event_f1_comparison(metrics: dict, output_dir: str):
     ax.bar(x, recalls, width, label='Recall', color='#55A868')
     ax.bar(x + width, f1s, width, label='F1', color='#DD8452')
 
-    ax.set_xlabel('事件', fontsize=12)
-    ax.set_ylabel('分数', fontsize=12)
-    ax.set_title('各事件 Precision / Recall / F1 对比', fontsize=14)
+    ax.set_xlabel('Event', fontsize=12)
+    ax.set_ylabel('Score', fontsize=12)
+    ax.set_title('Precision / Recall / F1 by Event', fontsize=14)
     ax.set_xticks(x)
     ax.set_xticklabels([f'Event {e}' for e in events])
     ax.legend()
@@ -256,20 +256,20 @@ def analyze_confidence_tiers(df: pd.DataFrame):
 
     df = df.copy()
     df['tier'] = df['confidence'].apply(
-        lambda c: '确信(≥0.9)' if c >= 0.9 else ('倾向(0.7-0.9)' if c >= 0.7 else '存疑(<0.7)')
+        lambda c: 'Confident (>=0.9)' if c >= 0.9 else ('Probable (0.7-0.9)' if c >= 0.7 else 'Uncertain (<0.7)')
     )
 
-    print(f"\n  === 置信度分级统计 ===")
-    print(f"  {'分级':<18} {'样本':>8} {'准确率':>10}")
+    print(f"\n  === Confidence Tier Analysis ===")
+    print(f"  {'Tier':<22} {'Count':>8} {'Accuracy':>10}")
     print(f"  {'-' * 45}")
-    for tier in ['确信(≥0.9)', '倾向(0.7-0.9)', '存疑(<0.7)']:
+    for tier in ['Confident (>=0.9)', 'Probable (0.7-0.9)', 'Uncertain (<0.7)']:
         subset = df[df['tier'] == tier]
         if len(subset) > 0:
             acc = (subset['true_label'] == subset['pred_label']).mean()
             pct = len(subset) / len(df) * 100
-            print(f"  {tier:<18} {len(subset):>4} ({pct:>5.1f}%)  {acc:>8.1%}")
+            print(f"  {tier:<22} {len(subset):>4} ({pct:>5.1f}%)  {acc:>8.1%}")
         else:
-            print(f"  {tier:<18}    0 (  0.0%)       -")
+            print(f"  {tier:<22}    0 (  0.0%)       -")
     print("  ===")
 
 
@@ -280,9 +280,9 @@ def plot_confidence_tier_accuracy(df: pd.DataFrame, output_dir: str):
 
     df = df.copy()
     df['tier'] = df['confidence'].apply(
-        lambda c: '确信(≥0.9)' if c >= 0.9 else ('倾向(0.7-0.9)' if c >= 0.7 else '存疑(<0.7)')
+        lambda c: 'Confident (>=0.9)' if c >= 0.9 else ('Probable (0.7-0.9)' if c >= 0.7 else 'Uncertain (<0.7)')
     )
-    order = ['确信(≥0.9)', '倾向(0.7-0.9)', '存疑(<0.7)']
+    order = ['Confident (>=0.9)', 'Probable (0.7-0.9)', 'Uncertain (<0.7)']
     colors = ['#55A868', '#DD8452', '#C44E52']
 
     counts = []
@@ -307,10 +307,10 @@ def plot_confidence_tier_accuracy(df: pd.DataFrame, output_dir: str):
             ha='center', va='bottom', fontsize=10
         )
     ax1.set_ylim(0, 110)
-    ax1.set_ylabel('准确率 (%)', fontsize=12)
-    ax1.set_title('各置信度分级准确率', fontsize=13)
+    ax1.set_ylabel('Accuracy (%)', fontsize=12)
+    ax1.set_title('Accuracy by Confidence Tier', fontsize=13)
     ax1.axhline(y=((df['true_label'] == df['pred_label']).mean() * 100),
-                color='gray', linestyle='--', alpha=0.6, label='整体准确率')
+                color='gray', linestyle='--', alpha=0.6, label='Overall Accuracy')
     ax1.legend()
     ax1.grid(axis='y', alpha=0.2)
 
@@ -321,7 +321,7 @@ def plot_confidence_tier_accuracy(df: pd.DataFrame, output_dir: str):
     if sizes:
         ax2.pie(sizes, labels=labels, autopct='%1.1f%%',
                 colors=palette, startangle=90, textprops={'fontsize': 11})
-        ax2.set_title('各置信度分级样本占比', fontsize=13)
+        ax2.set_title('Sample Distribution by Tier', fontsize=13)
 
     plt.tight_layout()
     path = f'{output_dir}/confidence_tiers.png'
@@ -333,22 +333,22 @@ def plot_confidence_tier_accuracy(df: pd.DataFrame, output_dir: str):
 def _analyze_errors(df: pd.DataFrame, n: int = 20):
     """分析分类错误样本"""
     errors = df[df['true_label'] != df['pred_label']].copy()
-    print(f"\n  错误分析:")
-    print(f"    总错误数: {len(errors)} / {len(df)} ({len(errors)/len(df)*100:.1f}%)")
+    print(f"\n  Error Analysis:")
+    print(f"    Total errors: {len(errors)} / {len(df)} ({len(errors)/len(df)*100:.1f}%)")
 
     fp = errors[errors['pred_label'] == 1]
     fn = errors[errors['pred_label'] == 0]
-    print(f"    FP (误报): {len(fp)} — Non-rumor→Rumor")
-    print(f"    FN (漏报): {len(fn)} — Rumor→Non-rumor")
+    print(f"    FP (False Positive): {len(fp)} — Non-rumor predicted as Rumor")
+    print(f"    FN (False Negative): {len(fn)} — Rumor predicted as Non-rumor")
 
     if len(fp) > 0:
-        print(f"\n  误报示例:")
+        print(f"\n  False Positive Examples:")
         for _, row in fp.head(min(3, len(fp))).iterrows():
             text = str(row['text'])[:120]
             print(f"    [{row['confidence']:.2f}] {text}...")
 
     if len(fn) > 0:
-        print(f"\n  漏报示例:")
+        print(f"\n  False Negative Examples:")
         for _, row in fn.head(min(3, len(fn))).iterrows():
             text = str(row['text'])[:120]
             print(f"    [{row['confidence']:.2f}] {text}...")
@@ -366,52 +366,52 @@ def evaluate(results_csv: str, output_dir: str = "figures"):
     os.makedirs(output_dir, exist_ok=True)
 
     # 加载
-    print(f"[1/7] 加载结果: {results_csv}")
+    print(f"[1/7] Loading results: {results_csv}")
     df = pd.read_csv(results_csv)
     required_cols = ['true_label', 'pred_label']
     for col in required_cols:
         if col not in df.columns:
-            raise ValueError(f"结果 CSV 缺少必需列: {col}")
-    print(f"  共 {len(df)} 条记录")
+            raise ValueError(f"Results CSV missing required column: {col}")
+    print(f"  {len(df)} records")
 
     # 计算指标
-    print("[2/7] 计算指标...")
+    print("[2/7] Computing metrics...")
     metrics = compute_metrics(df)
     print_metrics(metrics, df)
 
     # 绘图
-    print("[3/7] 绘制混淆矩阵...")
+    print("[3/7] Plotting confusion matrix...")
     plot_confusion_matrix(df, output_dir)
 
-    print("[4/7] 绘制事件准确率...")
+    print("[4/7] Plotting event accuracy...")
     plot_event_accuracy(metrics, output_dir)
 
-    print("[5/7] 绘制置信度分析...")
+    print("[5/7] Plotting confidence analysis...")
     if 'confidence' in df.columns:
         plot_confidence_histogram(df, output_dir)
         plot_calibration_curve(df, output_dir)
         plot_confidence_tier_accuracy(df, output_dir)
     else:
-        print("  [WARN] 结果中无 confidence 列，跳过置信度分析")
+        print("  [WARN] No confidence column in results, skipping")
 
-    print("[6/7] 绘制 F1 对比...")
+    print("[6/7] Plotting F1 comparison...")
     plot_event_f1_comparison(metrics, output_dir)
 
     # 置信度分级统计
-    print("[7/7] 置信度分级统计...")
+    print("[7/7] Confidence tier analysis...")
     analyze_confidence_tiers(df)
 
     # 错误分析
     _analyze_errors(df)
 
     print(f"\n{'='*70}")
-    print(f"评估完成，图表保存在 {output_dir}/")
+    print(f"Evaluation complete. Charts saved to {output_dir}/")
     print(f"{'='*70}")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Rumor检测系统 — 评估脚本"
+        description="Rumor Detection Evaluation Script"
     )
     parser.add_argument(
         '--input', required=True,

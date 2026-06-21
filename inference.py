@@ -100,53 +100,53 @@ def run_inference(
 
     # 0. 检查 API key
     print("=" * 60)
-    print("  可解释谣言检测 — 端到端推理")
+    print("  Explainable Rumor Detection - Inference Pipeline")
     print("=" * 60)
     if use_llm and not os.getenv("SJTU_API_KEY"):
-        print("[WARN] 未设置 SJTU_API_KEY，自动切换为 --no-llm 模式")
-        print("   设置方法: 复制 .env.example 为 .env，填入 API key")
+        print("[WARN] SJTU_API_KEY not set, switching to --no-llm mode")
+        print("   Set API key in .env file")
         use_llm = False
 
     # 1. 加载模型
-    print("[1/4] 加载 DL 分类模型...", end=" ", flush=True)
-    print("(RoBERTa-large ~1.3GB, 约30秒)...", flush=True)
+    print("[1/4] Loading DL classifier...", end=" ", flush=True)
+    print("(RoBERTa-large ~1.3GB, ~30s)...", flush=True)
     model, tokenizer = load_model(model_path, device="cpu")
-    print("  [OK] 模型加载成功")
+    print("  [OK] Model loaded")
 
     # 2. 加载检索器 + 初始化 LLM Explainer
     retriever = None
     explainer = None
     if use_llm:
-        print("[2/4] 加载案例检索索引 (sentence-transformers ~90MB)...", flush=True)
+        print("[2/4] Loading case retrieval index...", flush=True)
         retriever = CaseRetriever()
         if retriever.load_index(index_path):
-            print("  [OK] 索引加载成功 (2840 条训练集向量)")
+            print("  [OK] Index loaded (2840 training vectors)")
         else:
-            print("  [WARN] 索引文件不存在，将不使用相似案例")
+            print("  [WARN] Index file not found, skipping case retrieval")
             retriever = None
 
-        print("  初始化 LLM Explainer (SJTU API: deepseek-chat)...", end=" ", flush=True)
+        print("  Initializing LLM Explainer (SJTU API)...", end=" ", flush=True)
         explainer = LLMExplainer()
         print("[OK]")
-        print(f"  模型={explainer.model}, 速率控制=0.6s/req (~100 req/min)")
+        print(f"  Model={explainer.model}, Rate control=0.3s/req")
     else:
-        print("[2/4] --no-llm 模式，跳过检索和 LLM")
+        print("[2/4] --no-llm mode, skipping retrieval and LLM")
 
     # 3. 读取数据
-    print(f"[3/4] 读取输入: {input_csv}")
+    print(f"[3/4] Reading input: {input_csv}")
     df = pd.read_csv(input_csv)
     total = len(df)
-    print(f"  共 {total} 条推文")
+    print(f"  {total} tweets")
 
     # 4. 推理
-    print(f"[4/4] 开始推理{' (含 LLM 验证, 3线程并行)' if use_llm else ' (仅分类)'}...", flush=True)
+    print(f"[4/4] Running inference{' (with LLM, 5 threads)' if use_llm else ' (classification only)'}...", flush=True)
 
     from event_context import EVENT_CONTEXT
 
     start_time = time.time()
 
-    # ---------- Phase A: DL分类 + 检索 (串行, 本地快) ----------
-    print("  [Phase A] DL分类 + 案例检索...", end=" ", flush=True)
+    # ---------- Phase A: DL Classification + Retrieval ----------
+    print("  [Phase A] DL classification + case retrieval...", end=" ", flush=True)
     items = []
     for i, (_, row) in enumerate(df.iterrows()):
         text = str(row['text'])
@@ -173,17 +173,17 @@ def run_inference(
             'explanation': '',
         })
     phase_a_time = time.time() - start_time
-    print(f"完成 ({phase_a_time:.0f}s)", flush=True)
+    print(f"Done ({phase_a_time:.0f}s)", flush=True)
 
-    # ---------- Phase B: LLM 解释 (并行, 3线程) ----------
+    # ---------- Phase B: LLM 解释 (并行, 5线程) ----------
     if use_llm:
-        n_workers = 3
+        n_workers = 5
         n_total = len(items)
         completed = [0]
         print_lock = Lock()
         rate_lock = Lock()
         last_call_time = [time.time()]
-        min_interval = 0.6
+        min_interval = 0.3
 
         def call_llm(item):
             # 速率控制
@@ -201,7 +201,7 @@ def run_inference(
                     explainer=explainer
                 )
             except Exception as e:
-                explanation = f"[LLM 调用失败: {e}]"
+                explanation = f"[LLM Failed: {e}]"
             item['explanation'] = explanation
 
             with print_lock:
@@ -216,7 +216,7 @@ def run_inference(
                     print(f"        LLM: {explanation}")
                 print("-" * 60)
 
-        print(f"  [Phase B] LLM 解释 (并行 x{n_workers})...", flush=True)
+        print(f"  [Phase B] LLM Explanation (parallel x{n_workers})...", flush=True)
         with ThreadPoolExecutor(max_workers=n_workers) as executor:
             futures = [executor.submit(call_llm, item) for item in items]
             for f in as_completed(futures):
@@ -249,9 +249,9 @@ def run_inference(
     total_time = time.time() - start_time
     correct = sum(1 for r in results if r['true_label'] == r['pred_label'])
     acc = correct / len(results) * 100
-    print(f"\n[OK] 完成! 总耗时: {total_time/60:.1f} min")
-    print(f"  准确率: {correct}/{len(results)} = {acc:.1f}%")
-    print(f"  结果已保存至: {output_csv}")
+    print(f"\n[OK] Done! Total time: {total_time/60:.1f} min")
+    print(f"  Accuracy: {correct}/{len(results)} = {acc:.1f}%")
+    print(f"  Results saved to: {output_csv}")
 
     # ---------- Phase C: 置信度分级统计 ----------
     if output_confidence_tiers:
