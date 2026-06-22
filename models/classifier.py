@@ -7,7 +7,7 @@
 
 用法:
     from models.classifier import RumorClassifier, load_model
-    model, tokenizer = load_model("checkpoints/best_model.pt")
+    model, tokenizer = load_model("checkpoints/model_clean.pt")
 """
 
 import torch
@@ -78,7 +78,7 @@ class RumorClassifier(nn.Module):
         return logits
 
 
-def load_model(checkpoint_path: str = "checkpoints/best_model.pt",
+def load_model(checkpoint_path: str = "checkpoints/model_clean.pt",
                device: str = "cpu"):
     """加载训练好的分类模型和 tokenizer
 
@@ -91,7 +91,7 @@ def load_model(checkpoint_path: str = "checkpoints/best_model.pt",
 
     Usage:
         from models.classifier import load_model
-        model, tokenizer = load_model("checkpoints/best_model.pt")
+        model, tokenizer = load_model("checkpoints/model_clean.pt")
     """
     checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
 

@@ -62,33 +62,33 @@ def compute_metrics(df: pd.DataFrame):
 def print_metrics(metrics: dict, df: pd.DataFrame):
     """打印评估指标表格"""
     print("\n" + "=" * 70)
-    print("Evaluation Results")
+    print("评估结果")
     print("=" * 70)
 
     # 整体
     m = metrics['overall']
-    print(f"\n  Overall:")
-    print(f"    Accuracy:  {m['accuracy']:.4f}")
-    print(f"    Precision: {m['precision']:.4f}")
-    print(f"    Recall:    {m['recall']:.4f}")
-    print(f"    F1:        {m['f1']:.4f}")
+    print(f"\n  整体指标:")
+    print(f"    准确率 (Accuracy):  {m['accuracy']:.4f}")
+    print(f"    精确率 (Precision): {m['precision']:.4f}")
+    print(f"    召回率 (Recall):    {m['recall']:.4f}")
+    print(f"    F1 分数:            {m['f1']:.4f}")
 
     # 各事件
     event_keys = [k for k in metrics if k.startswith('event_')]
     if event_keys:
-        print(f"\n  {'Event':<10} {'Samples':>6} {'Acc':>8} {'Prec':>8} {'Rec':>8} {'F1':>8}")
-        print(f"  {'-'*48}")
+        print(f"\n  {'事件':<10} {'样本数':>6} {'准确率':>8} {'精确率':>8} {'召回率':>8} {'F1':>8}")
+        print(f"  {'-'*50}")
         for key in event_keys:
             m = metrics[key]
             event_id = key.replace('event_', '')
-            print(f"  Event {event_id:<5} {m['n_samples']:>6} {m['accuracy']:>8.4f} "
+            print(f"  事件 {event_id:<5} {m['n_samples']:>6} {m['accuracy']:>8.4f} "
                   f"{m['precision']:>8.4f} {m['recall']:>8.4f} {m['f1']:>8.4f}")
 
-    print(f"\n  Classification Report:\n")
+    print(f"\n  分类报告:\n")
     print(classification_report(
         df['true_label'].astype(int),
         df['pred_label'].astype(int),
-        target_names=['Non-rumor', 'Rumor'],
+        target_names=['非谣言', '谣言'],
         digits=4
     ))
 
@@ -256,20 +256,20 @@ def analyze_confidence_tiers(df: pd.DataFrame):
 
     df = df.copy()
     df['tier'] = df['confidence'].apply(
-        lambda c: 'Confident (>=0.9)' if c >= 0.9 else ('Probable (0.7-0.9)' if c >= 0.7 else 'Uncertain (<0.7)')
+        lambda c: '确信 (≥0.9)' if c >= 0.9 else ('倾向 (0.7-0.9)' if c >= 0.7 else '存疑 (<0.7)')
     )
 
-    print(f"\n  === Confidence Tier Analysis ===")
-    print(f"  {'Tier':<22} {'Count':>8} {'Accuracy':>10}")
-    print(f"  {'-' * 45}")
-    for tier in ['Confident (>=0.9)', 'Probable (0.7-0.9)', 'Uncertain (<0.7)']:
+    print(f"\n  === 置信度分级统计 ===")
+    print(f"  {'分级':<22} {'数量':>6} {'占比':>8} {'准确率':>10}")
+    print(f"  {'-' * 50}")
+    for tier in ['确信 (≥0.9)', '倾向 (0.7-0.9)', '存疑 (<0.7)']:
         subset = df[df['tier'] == tier]
         if len(subset) > 0:
             acc = (subset['true_label'] == subset['pred_label']).mean()
             pct = len(subset) / len(df) * 100
-            print(f"  {tier:<22} {len(subset):>4} ({pct:>5.1f}%)  {acc:>8.1%}")
+            print(f"  {tier:<22} {len(subset):>4}  ({pct:>4.1f}%)  {acc:>8.1%}")
         else:
-            print(f"  {tier:<22}    0 (  0.0%)       -")
+            print(f"  {tier:<22}    0  (  0.0%)       -")
     print("  ===")
 
 
@@ -333,25 +333,25 @@ def plot_confidence_tier_accuracy(df: pd.DataFrame, output_dir: str):
 def _analyze_errors(df: pd.DataFrame, n: int = 20):
     """分析分类错误样本"""
     errors = df[df['true_label'] != df['pred_label']].copy()
-    print(f"\n  Error Analysis:")
-    print(f"    Total errors: {len(errors)} / {len(df)} ({len(errors)/len(df)*100:.1f}%)")
+    print(f"\n  错误分析:")
+    print(f"    总错误数: {len(errors)} / {len(df)} ({len(errors)/len(df)*100:.1f}%)")
 
     fp = errors[errors['pred_label'] == 1]
     fn = errors[errors['pred_label'] == 0]
-    print(f"    FP (False Positive): {len(fp)} — Non-rumor predicted as Rumor")
-    print(f"    FN (False Negative): {len(fn)} — Rumor predicted as Non-rumor")
+    print(f"    误报 (FP): {len(fp)} 条 — 非谣言被误判为谣言")
+    print(f"    漏报 (FN): {len(fn)} 条 — 谣言被误判为非谣言")
 
     if len(fp) > 0:
-        print(f"\n  False Positive Examples:")
+        print(f"\n  误报样例:")
         for _, row in fp.head(min(3, len(fp))).iterrows():
             text = str(row['text'])[:120]
-            print(f"    [{row['confidence']:.2f}] {text}...")
+            print(f"    [置信度 {row['confidence']:.2f}] {text}...")
 
     if len(fn) > 0:
-        print(f"\n  False Negative Examples:")
+        print(f"\n  漏报样例:")
         for _, row in fn.head(min(3, len(fn))).iterrows():
             text = str(row['text'])[:120]
-            print(f"    [{row['confidence']:.2f}] {text}...")
+            print(f"    [置信度 {row['confidence']:.2f}] {text}...")
 
 
 def evaluate(results_csv: str, output_dir: str = "figures"):
@@ -366,56 +366,56 @@ def evaluate(results_csv: str, output_dir: str = "figures"):
     os.makedirs(output_dir, exist_ok=True)
 
     # 加载
-    print(f"[1/7] Loading results: {results_csv}")
+    print(f"[1/7] 加载结果文件: {results_csv}")
     df = pd.read_csv(results_csv)
     required_cols = ['true_label', 'pred_label']
     for col in required_cols:
         if col not in df.columns:
-            raise ValueError(f"Results CSV missing required column: {col}")
-    print(f"  {len(df)} records")
+            raise ValueError(f"结果 CSV 缺少必要列: {col}")
+    print(f"  共 {len(df)} 条记录")
 
     # 计算指标
-    print("[2/7] Computing metrics...")
+    print("[2/7] 计算评估指标...")
     metrics = compute_metrics(df)
     print_metrics(metrics, df)
 
     # 绘图
-    print("[3/7] Plotting confusion matrix...")
+    print("[3/7] 绘制混淆矩阵...")
     plot_confusion_matrix(df, output_dir)
 
-    print("[4/7] Plotting event accuracy...")
+    print("[4/7] 绘制事件准确率图...")
     plot_event_accuracy(metrics, output_dir)
 
-    print("[5/7] Plotting confidence analysis...")
+    print("[5/7] 绘制置信度分析图...")
     if 'confidence' in df.columns:
         plot_confidence_histogram(df, output_dir)
         plot_calibration_curve(df, output_dir)
         plot_confidence_tier_accuracy(df, output_dir)
     else:
-        print("  [WARN] No confidence column in results, skipping")
+        print("  [WARN] 结果中无 confidence 列，跳过置信度图表")
 
-    print("[6/7] Plotting F1 comparison...")
+    print("[6/7] 绘制 F1 对比图...")
     plot_event_f1_comparison(metrics, output_dir)
 
     # 置信度分级统计
-    print("[7/7] Confidence tier analysis...")
+    print("[7/7] 置信度分级统计...")
     analyze_confidence_tiers(df)
 
     # 错误分析
     _analyze_errors(df)
 
     print(f"\n{'='*70}")
-    print(f"Evaluation complete. Charts saved to {output_dir}/")
+    print(f"评估完成! 图表已保存至 {output_dir}/")
     print(f"{'='*70}")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Rumor Detection Evaluation Script"
+        description="谣言检测评估脚本"
     )
     parser.add_argument(
         '--input', required=True,
-        help='inference.py 输出的结果 CSV'
+        help='inference.py 输出的结果 CSV 文件路径'
     )
     parser.add_argument(
         '--output-dir', default='figures',

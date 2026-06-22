@@ -112,7 +112,7 @@ def generate_adversarial(text: str, max_swaps: int = 2, seed: int = 42) -> str:
 def run_inference_on_adversarial(
     adversarial_csv: str,
     output_csv: str,
-    model_path: str = "checkpoints/best_model.pt",
+    model_path: str = "checkpoints/model_clean.pt",
     device: str = "cpu"
 ) -> pd.DataFrame:
     """
@@ -309,7 +309,7 @@ def analyze_robustness(
     results_csv: str = None,
     original_csv: str = "rumer2026/val.csv",
     output_dir: str = "results",
-    model_path: str = "checkpoints/best_model.pt",
+    model_path: str = "checkpoints/model_clean.pt",
     device: str = "cpu",
     auto_run_inference: bool = True,
     use_llm_cross_validation: bool = False,
@@ -807,7 +807,7 @@ def print_defense_comparison(results: dict):
 def run_defense_experiments(
     original_csv: str = "rumer2026/val.csv",
     output_dir: str = "results",
-    model_path: str = "checkpoints/best_model.pt",
+    model_path: str = "checkpoints/model_clean.pt",
     adv_model_path: str = None,
     device: str = "cpu",
     use_llm: bool = False,
@@ -988,6 +988,154 @@ def run_defense_experiments(
 
 
 # ============================================================
+# 多模型对比模式（教师验证用）
+# ============================================================
+
+def run_multi_model_compare(
+    original_csv: str,
+    model_paths: list,
+    output_dir: str = "results",
+    device: str = "cpu",
+    n_samples: int = None,
+    seed: int = 42,
+):
+    """
+    多模型鲁棒性对比：生成对抗样本 → 各模型分别推理 → 对比翻转率
+
+    Args:
+        original_csv: 原始验证集 CSV
+        model_paths:  模型权重路径列表 [(path, label), ...]
+        output_dir:   输出目录
+        device:       推理设备
+        n_samples:    测试样本数 (None=全部)
+    """
+    print("=" * 70)
+    print("多模型鲁棒性对比")
+    print("=" * 70)
+    print(f"  数据: {original_csv}")
+    print(f"  模型数: {len(model_paths)}")
+    for path, label in model_paths:
+        print(f"    - {label}: {path}")
+    print()
+
+    # Step 1: 生成对抗样本（固定种子，保证可复现）
+    random.seed(seed)
+    np.random.seed(seed)
+    print(f"[1/3] 生成 WordNet 同义词对抗样本 (seed={seed})...")
+    df = pd.read_csv(original_csv)
+    if n_samples and n_samples < len(df):
+        df = df.head(n_samples)
+    print(f"  共 {len(df)} 条")
+
+    samples = []
+    skipped = 0
+    for _, row in df.iterrows():
+        text = str(row['text'])
+        adv_text = generate_adversarial(text, max_swaps=2)
+        if adv_text == text:
+            skipped += 1
+        samples.append({
+            'id': row['id'],
+            'text': text,
+            'event': int(row['event']),
+            'true_label': int(row['label']),
+            'adv_text': adv_text,
+            'perturbed': adv_text != text,
+        })
+    print(f"  可扰动: {len(samples) - skipped}, 无法扰动: {skipped}")
+
+    # Step 2: 各模型分别推理
+    all_results = []
+    total_models = len(model_paths)
+
+    for idx, (path, label) in enumerate(model_paths):
+        print(f"\n[2.{idx+1}/{total_models}] 测试: {label}")
+        print(f"  加载 {path}...")
+
+        from models.classifier import load_model as load_dl
+        from models.keyword_extractor import predict, _init_predictor
+        model, tokenizer = load_dl(path, device=device)
+        _init_predictor(model, tokenizer, device=device)
+
+        clean_correct = 0
+        flipped, total_adv = 0, 0
+        high_conf_flipped = 0
+        dir_0to1, dir_1to0 = 0, 0
+
+        for s in samples:
+            # 干净预测
+            clean_pred = predict(s['text'], s['event'])
+            if clean_pred['label'] == s['true_label']:
+                clean_correct += 1
+
+            if not s['perturbed']:
+                continue
+
+            # 对抗预测
+            adv_pred = predict(s['adv_text'], s['event'])
+            total_adv += 1
+            if clean_pred['label'] != adv_pred['label']:
+                flipped += 1
+                if clean_pred['confidence'] > 0.9:
+                    high_conf_flipped += 1
+                if clean_pred['label'] == 0 and adv_pred['label'] == 1:
+                    dir_0to1 += 1
+                elif clean_pred['label'] == 1 and adv_pred['label'] == 0:
+                    dir_1to0 += 1
+
+        clean_acc = clean_correct / len(samples) * 100
+        flip_rate = flipped / total_adv * 100 if total_adv > 0 else 0
+
+        all_results.append({
+            'label': label,
+            'clean_acc': clean_acc,
+            'flip_rate': flip_rate,
+            'flipped': flipped,
+            'total_adv': total_adv,
+            'high_conf_flipped': high_conf_flipped,
+            'dir_0to1': dir_0to1,
+            'dir_1to0': dir_1to0,
+        })
+
+        print(f"  干净准确率: {clean_acc:.2f}% ({clean_correct}/{len(samples)})")
+        print(f"  攻击翻转率: {flip_rate:.1f}% ({flipped}/{total_adv})")
+        print(f"  高置信翻转: {high_conf_flipped}  (0→1: {dir_0to1}, 1→0: {dir_1to0})")
+
+        del model
+        if device == 'cuda':
+            import torch
+            torch.cuda.empty_cache()
+
+    # Step 3: 打印对比表
+    print(f"\n[3/3] 对比汇总 (共 {total_models} 个模型)")
+    print("=" * 80)
+    print(f"{'模型':<22} {'干净Acc':>8} {'翻转率':>8} {'翻转数':>8} {'高置信翻':>8} {'0→1':>6} {'1→0':>6}")
+    print("-" * 75)
+    for r in all_results:
+        best = " ⭐" if r['clean_acc'] == max(rr['clean_acc'] for rr in all_results) else ""
+        print(f"{r['label']:<22} {r['clean_acc']:>7.2f}% {r['flip_rate']:>7.1f}% "
+              f"{r['flipped']:>5}/{r['total_adv']:<4} {r['high_conf_flipped']:>8} "
+              f"{r['dir_0to1']:>6} {r['dir_1to0']:>6}{best}")
+    print("-" * 75)
+
+    # 保存
+    os.makedirs(output_dir, exist_ok=True)
+    report_path = os.path.join(output_dir, 'model_comparison.txt')
+    with open(report_path, 'w', encoding='utf-8') as f:
+        f.write("多模型鲁棒性对比\n")
+        f.write(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("=" * 60 + "\n\n")
+        f.write(f"{'模型':<22} {'干净Acc':>8} {'翻转率':>8} {'翻转数':>8}\n")
+        f.write("-" * 50 + "\n")
+        for r in all_results:
+            f.write(f"{r['label']:<22} {r['clean_acc']:>7.2f}% {r['flip_rate']:>7.1f}% "
+                    f"{r['flipped']:>5}/{r['total_adv']}\n")
+    print(f"\n报告已保存: {report_path}")
+
+    return all_results
+
+
+# ============================================================
 # CLI 入口（Phase 6）
 # ============================================================
 
@@ -997,30 +1145,28 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用示例:
-  # 完整攻防评估（一条命令跑完）
+  # 多模型鲁棒性对比（推荐，一条命令对比三个模型）
+  python adversarial.py --mode compare --original rumer2026/val.csv
+
+  # 完整攻防评估（含 LLM 交叉验证）
   python adversarial.py --mode full --original rumer2026/val.csv --use-llm-defense
 
   # 仅生成对抗样本
   python adversarial.py --mode generate --original rumer2026/val.csv
 
-  # 仅评估（需要已有对抗样本推理结果）
-  python adversarial.py --mode evaluate \\
-      --input results/val_results.csv \\
-      --adversarial results/adversarial_results.csv
-
   # 四组对照实验
   python adversarial.py --mode experiments \\
       --original rumer2026/val.csv \\
-      --adv-model checkpoints/adv_defense/best_model.pt \\
+      --adv-model checkpoints/model_adv_v2.pt \\
       --use-llm-defense
         """
     )
 
     # --- 模式 ---
-    parser.add_argument('--mode', default='full',
-                        choices=['full', 'generate', 'evaluate', 'experiments'],
-                        help='运行模式: full=全自动攻防评估, generate=仅生成对抗样本, '
-                             'evaluate=仅评估对比, experiments=四组对照实验')
+    parser.add_argument('--mode', default='compare',
+                        choices=['compare', 'full', 'generate', 'evaluate', 'experiments'],
+                        help='运行模式: compare=多模型对比(推荐), full=全自动攻防评估, '
+                             'generate=仅生成对抗样本, evaluate=仅评估对比, experiments=四组对照实验')
 
     # --- 输入 ---
     parser.add_argument('--input', default=None,
@@ -1031,8 +1177,10 @@ def main():
                         help='对抗样本推理结果 CSV（mode=evaluate 时需要）')
 
     # --- 模型 ---
-    parser.add_argument('--model', default='checkpoints/best_model.pt',
+    parser.add_argument('--model', default='checkpoints/model_clean.pt',
                         help='基础模型路径')
+    parser.add_argument('--models', nargs='+', default=None,
+                        help='多模型对比 (mode=compare): 空格分隔的模型路径列表')
     parser.add_argument('--adv-model', default=None,
                         help='对抗训练后模型路径（实验 B/D 需要）')
 
@@ -1044,6 +1192,8 @@ def main():
     parser.add_argument('--device', default='cpu',
                         choices=['cpu', 'cuda', 'auto'],
                         help='推理设备')
+    parser.add_argument('--seed', type=int, default=42,
+                        help='随机种子 (默认42, 保证可复现)')
     parser.add_argument('--use-llm-defense', action='store_true',
                         help='启用 LLM 交叉验证防护')
     parser.add_argument('--no-auto-inference', action='store_true',
@@ -1052,7 +1202,37 @@ def main():
     args = parser.parse_args()
 
     # --- 执行 ---
-    if args.mode == 'generate':
+    if args.mode == 'compare':
+        # 多模型对比
+        if args.models:
+            models = []
+            for p in args.models:
+                # 推导标签
+                label = os.path.basename(p).replace('.pt', '')
+                models.append((p, label))
+        else:
+            # 默认三模型
+            models = [
+                ("checkpoints/model_clean.pt", "clean (干净训练)"),
+                ("checkpoints/model_adv_v1.pt", "adv_v1 (同义词对抗)"),
+                ("checkpoints/model_adv_v2.pt", "adv_v2 (多攻击对抗)"),
+            ]
+            # 只保留存在的
+            models = [(p, l) for p, l in models if os.path.exists(p)]
+
+        if len(models) < 1:
+            print("[ERROR] 未找到任何模型文件")
+            return
+
+        run_multi_model_compare(
+            original_csv=args.original,
+            model_paths=models,
+            output_dir=os.path.join(args.output_dir, 'adversarial'),
+            device=args.device,
+            seed=args.seed,
+        )
+
+    elif args.mode == 'generate':
         # 仅生成对抗样本
         print("=" * 60)
         print("对抗样本生成")

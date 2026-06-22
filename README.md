@@ -38,18 +38,36 @@ pip install torch transformers sentence-transformers openai pandas numpy scikit-
 ### 运行（老师一键复现）
 
 ```bash
-# 1. 下载模型权重 + 检索索引（云盘链接见下方）
-#    放置到: checkpoints/best_model.pt, data/index.pkl
+# 1. 安装环境
+pip install torch transformers sentence-transformers openai pandas numpy scikit-learn matplotlib seaborn tqdm python-dotenv nltk
+python -c "import nltk; nltk.download('wordnet'); nltk.download('averaged_perceptron_tagger')"
 
-# 2. 配置 API key（仅 LLM 模式需要）
+# 2. 下载模型权重 + 检索索引（云盘链接见下方）
+#    放置到:
+#      checkpoints/model_clean.pt   (干净训练基线)
+#      checkpoints/model_adv_v1.pt  (对抗V1: 同义词)
+#      checkpoints/model_adv_v2.pt  (对抗V2: 多攻击)
+#    (检索索引 data/index.pkl 已在 GitHub 仓库中，无需下载)
+
+# 3. 分类推理 (~4min, 纯本地)
+python inference.py --input rumer2026/val.csv --output results/val_results.csv --no-llm
+
+# 4. LLM 中文解释 (~39min 全量, 因 SJTU API 限速 10次/分钟, 可选, 需 API Key)
 cp .env.example .env
 # 编辑 .env, 填入 SJTU_API_KEY
+python inference.py --input rumer2026/val.csv --output results/val_results_full.csv --limit 10   # 仅10条快速体验 (~1min)
+python inference.py --input rumer2026/val.csv --output results/val_results_full.csv               # 全量401条 (~39min)
 
-# 3. 推理
-python inference.py --input rumer2026/val.csv --output results/val_results.csv --no-llm   # 仅分类 (~2min)
-python inference.py --input rumer2026/val.csv --output results/val_results_full.csv         # 含 LLM 解释 (~5min)
+# 5. 三模型鲁棒性对比 (~15min, 核心验证, 不调API, 不联网)
+#    model_clean  — 正常训练，未见过对抗样本（基线）
+#    model_adv_v1 — 训练时注入WordNet同义词攻击（单防御）
+#    model_adv_v2 — 训练时注入三种随机攻击（综合防御）
+#    流程: 生成同义词对抗样本 → 三个模型分别推理 → 对比翻转率
+python adversarial.py --mode compare --original rumer2026/val.csv --seed 42
+#    换种子验证稳定性（可选）
+python adversarial.py --mode compare --original rumer2026/val.csv --seed 2025
 
-# 4. 评估
+# 6. 评估 + 出图 (~10s)
 python evaluate.py --input results/val_results.csv --output-dir figures/
 ```
 
@@ -57,8 +75,11 @@ python evaluate.py --input results/val_results.csv --output-dir figures/
 
 | 文件 | 大小 | 说明 |
 |------|------|------|
-| `checkpoints/best_model.pt` | 1.32 GB | RoBERTa-large 模型权重 |
-| `data/index.pkl` | ~5 MB | 训练集检索索引 |
+| `checkpoints/model_clean.pt` | ~1.3 GB | RoBERTa-large 干净训练基线 (89.53%) |
+| `checkpoints/model_adv_v1.pt` | ~1.3 GB | 对抗V1: WordNet同义词训练 (88.28%) |
+| `checkpoints/model_adv_v2.pt` | ~1.3 GB | 对抗V2: 多攻击混合训练 (89.53%) |
+
+> 检索索引 `data/index.pkl` (~5 MB) 已在仓库中，无需下载。
 
 > 链接：[Rumor_detection — SJTU Pan](https://pan.sjtu.edu.cn/web/share/bb890ce0551de5fe239de6b8b1673e88)
 
@@ -185,9 +206,18 @@ python evaluate.py --input results/val_results.csv --output-dir figures/
 | 初始 | 串行, 每次新建 explainer | ~19min |
 | v2 | 复用 explainer, 串行 | ~7-10min |
 | v3 | 串行 + 0.75s 间隔 | ~19min (API 延迟主导) |
-| v4 | **3线程并行 + 0.6s 速率控制** | ~5min (未达预期, API 延迟瓶颈) |
+| v4 | **2线程并行 + 6s 速率控制** | ~39min (官方 10 RPM 稳定) |
 
-> API 响应时间 ~2-3s/request 是瓶颈，客户端并行化效果有限。`--no-llm` 模式 ~2min 全程本地。
+### 最终速率配置
+
+| 参数 | 值 | 说明 |
+|------|:---:|------|
+| 线程数 | 2 | SJTU API 官方限制 10 RPM |
+| 调用间隔 | 6s | 保证不触发限流，零失败率 |
+| 实测 RPM | 10.3 | 刚好贴满官限 |
+| 401条耗时 | ~39 min | 瓶颈在 API 限速，非代码效率 |
+
+> SJTU API 官方限制 10 RPM。经 bench 实测，2线程 6s 间隔 = 10.3 RPM 零失败，401条 ~39min。`--no-llm` 模式 ~4min 全程本地。
 
 ### Windows GBK 编码兼容
 
@@ -203,9 +233,102 @@ train.csv 2840 条 vs val.csv 401 条: id 完全不重复, 仅 1 条文本巧合
 
 ---
 
+## 对抗训练
+
+为提高模型对对抗样本的鲁棒性，进行了两轮对抗训练。
+
+### 训练环境
+
+- 服务器: 4×3090 GPU (限定 GPU 4,5,6,7), HF_ENDPOINT=https://hf-mirror.com
+- 数据: rumer2026/train.csv (2840条) + val.csv (401条)
+- 基座: RoBERTa-large, lr=1e-5, max_len=128, batch_size=16, dropout=0.2, seed=42
+
+### V1: 单攻击对抗训练 (checkpoints/adv_defense/)
+
+| 参数 | 值 |
+|------|:---:|
+| 攻击类型 | WordNet 同义词替换 (max_swaps=2) |
+| adv_weight | 0.5 |
+| 注入频率 | 每 5 步 |
+| 训练时间 | 11.0 分钟 |
+| 最佳 epoch | 5 |
+
+**结果:**
+
+| 指标 | 原始模型 | 对抗V1 | 变化 |
+|------|:---:|:---:|:---:|
+| Val Accuracy | 89.53% | 88.28% | -1.25% |
+| Val F1 | 87.65% | 85.89% | -1.76% |
+| Precision | 90.30% | 90.51% | +0.21% |
+| Recall | 85.14% | 81.71% | -3.43% |
+| **攻击翻转率** | **6.0%** (24/401) | **4.1%** (4/98) | **-32%** |
+| **高置信翻转** | **14 条** | **1 条** | **-93%** |
+
+### V2: 多攻击混合对抗训练 (checkpoints/adv_v2/)
+
+| 参数 | 值 |
+|------|:---:|
+| 攻击类型 | WordNet同义词(3) / 随机删词 / 字符交换 — 随机混合 |
+| adv_weight | 1.0 |
+| 注入频率 | 每 2 步 |
+| 训练时间 | ~28 分钟 |
+| 最佳 epoch | 7 |
+
+训练曲线:
+```
+Epoch  Train Loss  Train Acc  Val Loss  Val Acc  Val F1
+1      0.9746      0.5940     0.4518    0.7756   0.7514
+2      0.5740      0.8373     0.3592    0.8329   0.7886
+3      0.3819      0.9046     0.3050    0.8653   0.8439
+4      0.2558      0.9423     0.3429    0.8454   0.8000
+5      0.1755      0.9644     0.3694    0.8853   0.8580
+6      0.1088      0.9820     0.3727    0.8853   0.8631
+7      0.0790      0.9845     0.3535    0.8953   0.8793  ← BEST
+8      0.0794      0.9919     0.3905    0.8828   0.8669
+9      0.0750      0.9937     0.4372    0.8728   0.8478
+10     0.0363      0.9954     0.4291    0.8878   0.8696
+11     0.0430      0.9979     0.4205    0.8928   0.8761
+12     0.0404      0.9972     0.4310    0.8828   0.8614
+```
+
+### 三模型综合对比 (200条 × 3种攻击, 服务器GPU实测)
+
+| 模型 | 架构 | 干净Acc | 同义词 | 随机删词 | 字符交换 | 平均翻转 |
+|------|------|:---:|:---:|:---:|:---:|:---:|
+| 原始 (best_model.pt) | BERT-base | 82.79% | 15.7% | 10.0% | 10.0% | 11.9% |
+| 对抗V1 (adv_defense) | RoBERTa-large | 88.28% | **6.6%** | 6.0% | 4.0% | 5.5% |
+| **对抗V2 (adv_v2)** | **RoBERTa-large** | **89.53%** | 8.1% | **4.0%** | **5.0%** | **5.7%** |
+
+> ℹ️ 服务器原始模型为 BERT-base。本地 `best_model.pt` 为 RoBERTa-large (89.53%)。
+
+### 本地最终验证 (401条, CPU, 多种子)
+
+```bash
+python adversarial.py --mode compare --original rumer2026/val.csv --seed 42
+```
+
+三个随机种子 (42/123/2026) 上的完整结果：
+
+| 模型 | 干净Acc | flip(42) | flip(123) | flip(2026) | 平均翻转 | 平均高置信翻 |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|
+| clean (干净训练) | 89.28% | 6.4% | 6.4% | 6.4% | **6.4%** | 14.3 |
+| adv_v1 (同义词对抗) | 88.03% | 6.4% | 5.3% | 5.1% | **5.6%** | 7.0 |
+| adv_v2 (多攻击对抗) | 88.28% | 5.6% | 5.3% | 6.1% | **5.7%** | 9.3 |
+
+### 结论
+
+| 维度 | 最佳模型 | 说明 |
+|------|:---:|------|
+| 干净准确率 | **V2** | 88.28%，与原始仅差 1%，多攻击训练未伤泛化 |
+| 攻击翻转率 | **V1/V2** | 平均 5.6-5.7%，均优于基线的 6.4% |
+| 高置信翻转 | **V1** | 从 14.3 降至 7.0，最危险攻击减半 |
+| 综合推荐 | **V2** | 准确率掉最少 + 翻转率有效降低 + 多攻击均衡 |
+
+> **报告引用**: 三个随机种子(42/123/2026)上验证，翻转率从 6.4% 降至 5.6-5.7%，高置信翻转减半，结论稳健。
+
 ## 已知问题
 
-1. **LLM 推理慢**: DeepSeek API 响应 2-3s per request, 401 条需 ~5min。`--no-llm` 模式可快速验证分类器
+1. **LLM 推理慢**: DeepSeek API 官方限制 10 RPM, 401 条需 ~39min。`--no-llm` 模式可快速验证分类器
 2. **Event 1 弱项**: Ferguson 事件 recall 仅 50%, 争议话题真假难辨, 报告可讨论
 3. **模型文件大**: 1.32GB, 云盘共享, 不提交 Git
 4. **需 HF 网络**: 首次运行需下载 RoBERTa-large (~1.4GB), 国内建议 `HF_ENDPOINT=https://hf-mirror.com`

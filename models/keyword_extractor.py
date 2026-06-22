@@ -10,7 +10,7 @@
     from models.classifier import load_model
     from models.keyword_extractor import predict
 
-    model, tokenizer = load_model("checkpoints/best_model.pt")
+    model, tokenizer = load_model("checkpoints/model_clean.pt")
     result = predict("Police fired tear gas at protesters", event_id=1)
 """
 

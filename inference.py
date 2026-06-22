@@ -82,9 +82,10 @@ def run_inference(
     input_csv: str,
     output_csv: str,
     use_llm: bool = True,
-    model_path: str = "checkpoints/best_model.pt",
+    model_path: str = "checkpoints/model_clean.pt",
     index_path: str = "data/index.pkl",
     output_confidence_tiers: bool = False,
+    limit: int = None,
 ):
     """
     端到端推理管道：串联 姜新晨 的 DL 分类 + 靳卓达 的检索和 LLM 解释
@@ -100,53 +101,56 @@ def run_inference(
 
     # 0. 检查 API key
     print("=" * 60)
-    print("  Explainable Rumor Detection - Inference Pipeline")
+    print("  可解释谣言检测 — 推理管道")
     print("=" * 60)
     if use_llm and not os.getenv("SJTU_API_KEY"):
-        print("[WARN] SJTU_API_KEY not set, switching to --no-llm mode")
-        print("   Set API key in .env file")
+        print("[WARN] 未设置 SJTU_API_KEY，自动切换为 --no-llm 模式")
+        print("  请在 .env 文件中配置 API Key")
         use_llm = False
 
     # 1. 加载模型
-    print("[1/4] Loading DL classifier...", end=" ", flush=True)
-    print("(RoBERTa-large ~1.3GB, ~30s)...", flush=True)
+    print("[1/4] 加载 DL 分类器...", end=" ", flush=True)
+    print("(RoBERTa-large ~1.3GB, 约30秒)...", flush=True)
     model, tokenizer = load_model(model_path, device="cpu")
-    print("  [OK] Model loaded")
+    print("  [OK] 模型加载完成")
 
     # 2. 加载检索器 + 初始化 LLM Explainer
     retriever = None
     explainer = None
     if use_llm:
-        print("[2/4] Loading case retrieval index...", flush=True)
+        print("[2/4] 加载案例检索索引...", flush=True)
         retriever = CaseRetriever()
         if retriever.load_index(index_path):
-            print("  [OK] Index loaded (2840 training vectors)")
+            print("  [OK] 索引加载完成 (2840 条训练向量)")
         else:
-            print("  [WARN] Index file not found, skipping case retrieval")
+            print("  [WARN] 未找到索引文件，跳过案例检索")
             retriever = None
 
-        print("  Initializing LLM Explainer (SJTU API)...", end=" ", flush=True)
+        print("  初始化 LLM 解释器 (SJTU API)...", end=" ", flush=True)
         explainer = LLMExplainer()
         print("[OK]")
-        print(f"  Model={explainer.model}, Rate control=0.3s/req")
+        print(f"  模型={explainer.model}, 速率控制=6s/次")
     else:
-        print("[2/4] --no-llm mode, skipping retrieval and LLM")
+        print("[2/4] --no-llm 模式，跳过检索和 LLM")
 
     # 3. 读取数据
-    print(f"[3/4] Reading input: {input_csv}")
+    print(f"[3/4] 读取输入文件: {input_csv}")
     df = pd.read_csv(input_csv)
+    if limit and limit < len(df):
+        df = df.head(limit)
+        print(f"  --limit={limit}, 仅处理前 {limit} 条")
     total = len(df)
-    print(f"  {total} tweets")
+    print(f"  共 {total} 条推文")
 
     # 4. 推理
-    print(f"[4/4] Running inference{' (with LLM, 5 threads)' if use_llm else ' (classification only)'}...", flush=True)
+    print(f"[4/4] 开始推理{' (LLM 解释, 2线程)' if use_llm else ' (仅分类)'}...", flush=True)
 
     from event_context import EVENT_CONTEXT
 
     start_time = time.time()
 
     # ---------- Phase A: DL Classification + Retrieval ----------
-    print("  [Phase A] DL classification + case retrieval...", end=" ", flush=True)
+    print("  [阶段 A] DL 分类 + 案例检索...", end=" ", flush=True)
     items = []
     for i, (_, row) in enumerate(df.iterrows()):
         text = str(row['text'])
@@ -173,17 +177,17 @@ def run_inference(
             'explanation': '',
         })
     phase_a_time = time.time() - start_time
-    print(f"Done ({phase_a_time:.0f}s)", flush=True)
+    print(f"完成 ({phase_a_time:.0f}s)", flush=True)
 
-    # ---------- Phase B: LLM 解释 (并行, 5线程) ----------
+    # ---------- Phase B: LLM 解释 (并行, 2线程, 6s间隔, 实测10.3RPM 0失败) ----------
     if use_llm:
-        n_workers = 5
+        n_workers = 2
         n_total = len(items)
         completed = [0]
         print_lock = Lock()
         rate_lock = Lock()
         last_call_time = [time.time()]
-        min_interval = 0.3
+        min_interval = 6.0
 
         def call_llm(item):
             # 速率控制
@@ -216,7 +220,7 @@ def run_inference(
                     print(f"        LLM: {explanation}")
                 print("-" * 60)
 
-        print(f"  [Phase B] LLM Explanation (parallel x{n_workers})...", flush=True)
+        print(f"  [阶段 B] LLM 解释生成 (并行 {n_workers}线程)...", flush=True)
         with ThreadPoolExecutor(max_workers=n_workers) as executor:
             futures = [executor.submit(call_llm, item) for item in items]
             for f in as_completed(futures):
@@ -249,9 +253,9 @@ def run_inference(
     total_time = time.time() - start_time
     correct = sum(1 for r in results if r['true_label'] == r['pred_label'])
     acc = correct / len(results) * 100
-    print(f"\n[OK] Done! Total time: {total_time/60:.1f} min")
-    print(f"  Accuracy: {correct}/{len(results)} = {acc:.1f}%")
-    print(f"  Results saved to: {output_csv}")
+    print(f"\n[OK] 推理完成! 总耗时: {total_time/60:.1f} 分钟")
+    print(f"  准确率: {correct}/{len(results)} = {acc:.1f}%")
+    print(f"  结果已保存至: {output_csv}")
 
     # ---------- Phase C: 置信度分级统计 ----------
     if output_confidence_tiers:
@@ -290,11 +294,11 @@ def main():
     )
     parser.add_argument(
         '--no-llm', action='store_true',
-        help='跳过 LLM 调用，仅输出 DL 分类结果（无需 API key）'
+        help='跳过 LLM 调用，仅输出 DL 分类结果 (无需 API Key)'
     )
     parser.add_argument(
-        '--model', default='checkpoints/best_model.pt',
-        help='模型权重路径 (默认: checkpoints/best_model.pt)'
+        '--model', default='checkpoints/model_clean.pt',
+        help='模型权重路径 (默认: checkpoints/model_clean.pt)'
     )
     parser.add_argument(
         '--index', default='data/index.pkl',
@@ -302,7 +306,11 @@ def main():
     )
     parser.add_argument(
         '--output-confidence-tiers', action='store_true',
-        help='输出置信度分级统计（确信/倾向/存疑）及各分级准确率'
+        help='推理完成后输出置信度分级统计 (确信/倾向/存疑)'
+    )
+    parser.add_argument(
+        '--limit', type=int, default=None,
+        help='仅处理前 N 条样本 (快速验证用, 如 --limit 10)'
     )
     args = parser.parse_args()
     sys.stdout.flush()
@@ -314,6 +322,7 @@ def main():
         model_path=args.model,
         index_path=args.index,
         output_confidence_tiers=args.output_confidence_tiers,
+        limit=args.limit,
     )
 
 

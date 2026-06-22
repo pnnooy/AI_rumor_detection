@@ -15,8 +15,8 @@ env/
 # Model checkpoints (uncomment after training to track)
 # checkpoints/
 
-# Data index (generated)
-data/index.pkl
+# Data index — committed to git (~5 MB)
+# data/index.pkl
 
 # Environment variables
 .env
