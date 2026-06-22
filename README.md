@@ -73,7 +73,7 @@ python inference.py --input rumer2026/val.csv --output results/val_results.csv -
 
 **步骤 4：LLM 中文解释**（需配置 API Key）
 
-> ⚠️ SJTU API 限速 10 次/分钟，全量 401 条约需 39 分钟，非代码效率问题。可选仅运行前 10 条进行快速测试。
+> ⚠️ SJTU API 限速 10 次/分钟，全量 401 条约需 39 分钟，非代码效率问题。可选随机抽取 10 条进行快速测试。
 
 ```bash
 cp .env.example .env        # 编辑 .env 填入 SJTU_API_KEY
