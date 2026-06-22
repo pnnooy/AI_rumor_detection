@@ -47,7 +47,7 @@ cd AI_rumor_detection
 **步骤 1：安装环境**（一次性，约 3 分钟）
 
 ```bash
-pip install torch transformers sentence-transformers openai pandas numpy scikit-learn matplotlib seaborn tqdm python-dotenv nltk
+pip install -r requirements.txt
 python -c "import nltk; nltk.download('wordnet'); nltk.download('averaged_perceptron_tagger')"
 ```
 

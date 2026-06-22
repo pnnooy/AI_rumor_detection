@@ -31,14 +31,6 @@ from models.classifier import load_model      # noqa: E402
 from models.keyword_extractor import predict  # noqa: E402
 
 
-# ============================================================
-# 接口 — 靳卓达 实现
-# ============================================================
-
-from retrieval import CaseRetriever                                   # noqa: E402
-from llm_explainer import LLMExplainer                                # noqa: E402
-
-
 def generate_explanation(
     text: str,
     dl_result: dict,
@@ -118,6 +110,9 @@ def run_inference(
     retriever = None
     explainer = None
     if use_llm:
+        from retrieval import CaseRetriever
+        from llm_explainer import LLMExplainer
+
         print("[2/4] 加载案例检索索引...", flush=True)
         retriever = CaseRetriever()
         if retriever.load_index(index_path):

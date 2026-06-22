@@ -366,6 +366,10 @@ def evaluate(results_csv: str, output_dir: str = "figures"):
     os.makedirs(output_dir, exist_ok=True)
 
     # 加载
+    if not os.path.exists(results_csv):
+        print(f"[ERROR] 结果文件不存在: {results_csv}")
+        print(f"  请先运行推理: python inference.py --input rumer2026/val.csv --output {results_csv} --no-llm")
+        return
     print(f"[1/7] 加载结果文件: {results_csv}")
     df = pd.read_csv(results_csv)
     required_cols = ['true_label', 'pred_label']

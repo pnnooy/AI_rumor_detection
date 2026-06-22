@@ -1050,6 +1050,10 @@ def run_multi_model_compare(
 
     for idx, (path, label) in enumerate(model_paths):
         print(f"\n[2.{idx+1}/{total_models}] 测试: {label}")
+        if not os.path.exists(path):
+            print(f"  [SKIP] 模型文件不存在: {path}")
+            continue
+
         print(f"  加载 {path}...")
 
         from models.classifier import load_model as load_dl
