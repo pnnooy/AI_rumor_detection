@@ -132,8 +132,8 @@ def run_inference(
     print(f"[3/4] 读取输入文件: {input_csv}")
     df = pd.read_csv(input_csv)
     if limit and limit < len(df):
-        df = df.head(limit)
-        print(f"  --limit={limit}, 仅处理前 {limit} 条")
+        df = df.sample(n=limit, random_state=42)
+        print(f"  --limit={limit}, 随机抽取 {limit} 条")
     total = len(df)
     print(f"  共 {total} 条推文")
 

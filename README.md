@@ -78,7 +78,7 @@ python inference.py --input rumer2026/val.csv --output results/val_results.csv -
 ```bash
 cp .env.example .env        # 编辑 .env 填入 SJTU_API_KEY
 
-# 快速体验：仅 10 条，约 1 分钟
+# 快速体验：随机抽取 10 条，约 1 分钟
 python inference.py --input rumer2026/val.csv --output results/val_results_full.csv --limit 10
 
 # 全量 401 条，约 39 分钟
