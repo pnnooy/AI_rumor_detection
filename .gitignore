@@ -12,11 +12,8 @@ venv/
 .venv/
 env/
 
-# Model checkpoints (uncomment after training to track)
-# checkpoints/
-
-# Data index — committed to git (~5 MB)
-# data/index.pkl
+# Model checkpoints (large binary files, distributed via cloud)
+checkpoints/
 
 # Environment variables
 .env
@@ -39,6 +36,12 @@ results/
 
 # Figures (generated)
 figures/
+
+# Archive
+_archive*/
+
+# Server-side training files (not needed for teacher validation)
+server/
 
 # Jupyter
 .ipynb_checkpoints/
