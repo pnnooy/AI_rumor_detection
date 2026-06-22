@@ -340,41 +340,44 @@ python adversarial.py --mode compare --original rumer2026/val.csv --seed 42
 ```
 ├── README.md
 ├── .env.example              # API key 配置模板
-├── .gitignore                # 排除 .env, checkpoints, data, results, figures
+├── .gitignore
 │
 ├── rumer2026/                # 原始数据
 │   ├── train.csv             # 2840 条
 │   └── val.csv               # 401 条
 │
-├── models/                   # 分类器模型 (AutoModel 通用版)
+├── models/                   # 分类器模型
 │   ├── __init__.py
 │   ├── classifier.py         # RumorClassifier + load_model()
-│   └── keyword_extractor.py  # predict() + _extract_keywords()
+│   └── keyword_extractor.py  # predict() + 关键词提取
 │
-├── preprocess.py             # clean_text() + RumorDataset + create_dataloaders()
+├── preprocess.py             # 数据预处理
+├── retrieval.py              # 案例检索
+├── llm_explainer.py          # LLM 解释生成
+├── event_context.py          # 7 个事件的背景文本
 ├── train.py                  # 训练脚本
 │
-├── retrieval.py              # CaseRetriever 类
-├── llm_explainer.py          # LLMExplainer 类 + build_prompt()
-├── event_context.py          # 7个事件的背景文本
+├── inference.py              # 端到端推理管道 (主入口)
+├── evaluate.py               # 评估 + 6 张图表
+├── adversarial.py            # 对抗样本攻防 + 多模型对比
 │
-├── inference.py              # 端到端推理脚本 (主入口)
-├── evaluate.py               # 评估 + 5图表生成
-├── adversarial.py            # 对抗样本模块
+├── data/
+│   └── index.pkl             # 检索索引 (已提交, ~5 MB)
+├── checkpoints/              # 模型权重 (Git 忽略, 云盘分发)
+├── results/                  # 推理输出 (Git 忽略)
+├── figures/                  # 评估图表 (Git 忽略)
+├── logs/                     # 训练日志 (Git 忽略)
 │
-├── analyze_results.py        # 结果分析脚本
-├── analyze_llm_verdict.py    # LLM 独立判断解析
+├── tools/                    # 辅助工具脚本
+│   ├── benchmark_llm_rate.py # LLM API 速率压测
+│   ├── benchmark_seeds.py    # 多种子鲁棒性验证
+│   ├── explore_events.py     # 数据探索
+│   ├── analyze_results.py    # 推理结果分析
+│   └── analyze_llm_verdict.py
 │
-├── checkpoints/              # 模型权重 (不提交Git)
-├── data/                     # 检索索引 (不提交Git)
-├── results/                  # 推理输出 (不提交Git)
-├── figures/                  # 评估图表 (不提交Git)
-├── logs/                     # 训练日志 (不提交Git)
-│
-├── server/                   # 服务器训练文件 (不上传GitHub)
-│   ├── train.py, train_sweep_v2.py, run.sh, requirements.txt
-│   ├── models/, rumer2026/
-│   └── checkpoints/ (sweep_v2_summary.json)
+├── server/                   # 服务器训练脚本
+│   ├── train_adv_v2.py       # 多攻击对抗训练
+│   └── compare_robustness.py # 全模型鲁棒性对比
 │
 └── tests/
     ├── test_retrieval.py
