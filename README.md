@@ -37,37 +37,61 @@ pip install torch transformers sentence-transformers openai pandas numpy scikit-
 
 ### 运行（老师一键复现）
 
+**步骤 1：安装环境**（一次性，约 3 分钟）
+
 ```bash
-# 1. 安装环境
 pip install torch transformers sentence-transformers openai pandas numpy scikit-learn matplotlib seaborn tqdm python-dotenv nltk
 python -c "import nltk; nltk.download('wordnet'); nltk.download('averaged_perceptron_tagger')"
+```
 
-# 2. 下载模型权重 + 检索索引（云盘链接见下方）
-#    放置到:
-#      checkpoints/model_clean.pt   (干净训练基线)
-#      checkpoints/model_adv_v1.pt  (对抗V1: 同义词)
-#      checkpoints/model_adv_v2.pt  (对抗V2: 多攻击)
-#    (检索索引 data/index.pkl 已在 GitHub 仓库中，无需下载)
+**步骤 2：下载模型权重**（云盘链接见下方）
 
-# 3. 分类推理 (~4min, 纯本地)
+将以下文件下载并放入对应目录（检索索引 `data/index.pkl` 已在仓库中，无需下载）：
+
+| 文件 | 放置路径 | 大小 |
+|------|------|------|
+| 干净训练基线 | `checkpoints/model_clean.pt` | ~1.3 GB |
+| 对抗V1（同义词防御） | `checkpoints/model_adv_v1.pt` | ~1.3 GB |
+| 对抗V2（多攻击防御） | `checkpoints/model_adv_v2.pt` | ~1.3 GB |
+
+**步骤 3：分类推理**（~4 分钟，纯本地 CPU，不联网）
+
+RoBERTa-large 对 401 条验证集逐条判断谣言/非谣言，输出预测标签 + 置信度 + 关键词。
+
+```bash
 python inference.py --input rumer2026/val.csv --output results/val_results.csv --no-llm
+```
 
-# 4. LLM 中文解释 (~39min 全量, 因 SJTU API 限速 10次/分钟, 可选, 需 API Key)
-cp .env.example .env
-# 编辑 .env, 填入 SJTU_API_KEY
-python inference.py --input rumer2026/val.csv --output results/val_results_full.csv --limit 10   # 仅10条快速体验 (~1min)
-python inference.py --input rumer2026/val.csv --output results/val_results_full.csv               # 全量401条 (~39min)
+**步骤 4：LLM 中文解释**（可选，需配置 API Key）
 
-# 5. 三模型鲁棒性对比 (~15min, 核心验证, 不调API, 不联网)
-#    model_clean  — 正常训练，未见过对抗样本（基线）
-#    model_adv_v1 — 训练时注入WordNet同义词攻击（单防御）
-#    model_adv_v2 — 训练时注入三种随机攻击（综合防御）
-#    流程: 生成同义词对抗样本 → 三个模型分别推理 → 对比翻转率
+> ⚠️ SJTU API 限速 10 次/分钟，全量 401 条约需 39 分钟，非代码效率问题。
+
+```bash
+cp .env.example .env        # 编辑 .env 填入 SJTU_API_KEY
+
+# 快速体验：仅 10 条，约 1 分钟
+python inference.py --input rumer2026/val.csv --output results/val_results_full.csv --limit 10
+
+# 全量 401 条，约 39 分钟
+python inference.py --input rumer2026/val.csv --output results/val_results_full.csv
+```
+
+**步骤 5：三模型鲁棒性对比**（~15 分钟，核心验证，不调 API，不联网）
+
+对三个模型生成同义词对抗样本并对比翻转率：
+- `model_clean`  — 正常训练，未见过对抗样本（基线）
+- `model_adv_v1` — 训练时注入 WordNet 同义词攻击（单防御）
+- `model_adv_v2` — 训练时注入三种随机攻击（综合防御）
+
+```bash
 python adversarial.py --mode compare --original rumer2026/val.csv --seed 42
-#    换种子验证稳定性（可选）
-python adversarial.py --mode compare --original rumer2026/val.csv --seed 2025
+```
 
-# 6. 评估 + 出图 (~10s)
+**步骤 6：评估 + 出图**（~10 秒）
+
+生成 6 张评估图表（混淆矩阵、事件准确率、置信度分布等）及终端指标表。
+
+```bash
 python evaluate.py --input results/val_results.csv --output-dir figures/
 ```
 
