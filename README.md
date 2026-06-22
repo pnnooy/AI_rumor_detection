@@ -37,6 +37,13 @@ pip install torch transformers sentence-transformers openai pandas numpy scikit-
 
 ### 运行（老师一键复现）
 
+**步骤 0：获取代码**
+
+```bash
+git clone https://github.com/pnnooy/AI_rumor_detection.git
+cd AI_rumor_detection
+```
+
 **步骤 1：安装环境**（一次性，约 3 分钟）
 
 ```bash
@@ -44,7 +51,9 @@ pip install torch transformers sentence-transformers openai pandas numpy scikit-
 python -c "import nltk; nltk.download('wordnet'); nltk.download('averaged_perceptron_tagger')"
 ```
 
-**步骤 2：下载模型权重**（云盘链接见下方）
+**步骤 2：下载模型权重**
+
+> 下载链接：[Rumor_detection — SJTU Pan](https://pan.sjtu.edu.cn/web/share/bb890ce0551de5fe239de6b8b1673e88)
 
 将以下文件下载并放入对应目录（检索索引 `data/index.pkl` 已在仓库中，无需下载）：
 
