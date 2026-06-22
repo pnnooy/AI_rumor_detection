@@ -247,6 +247,8 @@ def run_inference(
     } for it in items]
 
     # 5. 保存结果
+    import os as _os
+    _os.makedirs(_os.path.dirname(output_csv) or '.', exist_ok=True)
     pd.DataFrame(results).to_csv(output_csv, index=False, encoding='utf-8-sig')
 
     # 6. 统计
