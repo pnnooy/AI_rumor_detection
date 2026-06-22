@@ -35,7 +35,7 @@
 pip install torch transformers sentence-transformers openai pandas numpy scikit-learn matplotlib seaborn tqdm python-dotenv nltk
 ```
 
-### 运行（老师一键复现）
+### 运行（一键复现）
 
 **步骤 0：获取代码**
 
@@ -71,9 +71,9 @@ RoBERTa-large 对 401 条验证集逐条判断谣言/非谣言，输出预测标
 python inference.py --input rumer2026/val.csv --output results/val_results.csv --no-llm
 ```
 
-**步骤 4：LLM 中文解释**（可选，需配置 API Key）
+**步骤 4：LLM 中文解释**（需配置 API Key）
 
-> ⚠️ SJTU API 限速 10 次/分钟，全量 401 条约需 39 分钟，非代码效率问题。
+> ⚠️ SJTU API 限速 10 次/分钟，全量 401 条约需 39 分钟，非代码效率问题。可选仅运行前 10 条进行快速测试。
 
 ```bash
 cp .env.example .env        # 编辑 .env 填入 SJTU_API_KEY
@@ -103,18 +103,6 @@ python adversarial.py --mode compare --original rumer2026/val.csv --seed 42
 ```bash
 python evaluate.py --input results/val_results.csv --output-dir figures/
 ```
-
-### 下载链接
-
-| 文件 | 大小 | 说明 |
-|------|------|------|
-| `checkpoints/model_clean.pt` | ~1.3 GB | RoBERTa-large 干净训练基线 (89.53%) |
-| `checkpoints/model_adv_v1.pt` | ~1.3 GB | 对抗V1: WordNet同义词训练 (88.28%) |
-| `checkpoints/model_adv_v2.pt` | ~1.3 GB | 对抗V2: 多攻击混合训练 (89.53%) |
-
-> 检索索引 `data/index.pkl` (~5 MB) 已在仓库中，无需下载。
-
-> 链接：[Rumor_detection — SJTU Pan](https://pan.sjtu.edu.cn/web/share/bb890ce0551de5fe239de6b8b1673e88)
 
 ---
 
