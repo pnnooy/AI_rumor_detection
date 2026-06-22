@@ -50,5 +50,4 @@ server/
 *.pdf
 *.doc
 *.docx
-!report/*.pdf
-!report/*.docx
+!report.pdf
